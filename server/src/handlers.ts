@@ -1,10 +1,13 @@
+import type { AuthUser } from "./auth.js";
 import type { Config } from "./config.js";
+import { proActive, type CallRow, type Store } from "./db/store.js";
 import { ApiError } from "./errors.js";
 import { callWithRetry, parseFeedbackOutput, parseTurnOutput } from "./llm/parse.js";
 import { polishSpanish } from "./llm/spanish.js";
 import { buildCustomerSystem, buildFeedbackSystem, buildFeedbackUser, buildTurnMessages } from "./llm/prompts.js";
-import type { TokenBudget } from "./limits.js";
+import type { ScenarioCatalog } from "./scenarios/catalog.js";
 import type { Scenario } from "./scenarios/load.js";
+import { startOfDay } from "./time.js";
 import {
   assertTurnShape, countRole, customerTurnNumber, meaningfulAgentLines, normalizeHistory, resolveEnd,
 } from "./turnLogic.js";
@@ -13,22 +16,52 @@ import { parseSessionBody } from "./validate.js";
 
 export interface Deps {
   config: Config;
-  scenarios: Map<string, Scenario>;
+  catalog: ScenarioCatalog;
+  store: Store;
   llm: LlmClient;
-  budget: TokenBudget;
+  /** Injectable clock for tests. */
+  now?: () => Date;
 }
 
+export const nowOf = (deps: Deps) => (deps.now ? deps.now() : new Date());
+
 function findScenario(deps: Deps, id: string): Scenario {
-  const s = deps.scenarios.get(id);
+  const s = deps.catalog.get(id);
   if (!s) throw new ApiError(404, "unknown_scenario", `Unknown scenario "${id}".`);
   return s;
 }
 
-const capError = () =>
-  new ApiError(429, "session_token_cap", "This call reached its usage limit.");
+const capError = () => new ApiError(429, "session_token_cap", "This call reached its usage limit.");
+const notFound = () => new ApiError(404, "not_found", "Call not found.");
 
-export async function handleTurn(deps: Deps, body: unknown) {
-  const { config, budget } = deps;
+/** Free accounts: free-tier scenarios only, and a daily number of calls. Pro: no limits. */
+export async function checkCanStart(deps: Deps, user: AuthUser, scenario: Scenario): Promise<void> {
+  const now = nowOf(deps);
+  const profile = await deps.store.getProfile(user.userId);
+  if (profile && proActive(profile, now)) return;
+  if (scenario.tier === "pro") throw new ApiError(403, "pro_required", "This scenario is part of Pro.");
+  const { freeDailyLimit } = await deps.store.getSettings();
+  const today = await deps.store.countCallsSince(user.userId, startOfDay(now, deps.config.timeZone));
+  if (today >= freeDailyLimit) throw new ApiError(403, "daily_limit", "Free calls for today are used up.");
+}
+
+/** The call this turn belongs to. The first turn (empty history) creates it, after the plan checks. */
+async function openCall(deps: Deps, user: AuthUser, id: string, scenario: Scenario, firstTurn: boolean): Promise<CallRow> {
+  const existing = await deps.store.getCall(id);
+  if (existing) {
+    if (existing.userId !== user.userId) throw notFound();
+    if (existing.scenarioId !== scenario.id) throw new ApiError(400, "invalid_request", "Scenario does not match this call.");
+    if (existing.finishedAt) throw new ApiError(400, "call_over", "This call already ended.");
+    return existing;
+  }
+  if (!firstTurn) throw notFound();
+  await checkCanStart(deps, user, scenario);
+  await deps.store.createCall({ id, userId: user.userId, scenarioId: scenario.id });
+  return { id, userId: user.userId, scenarioId: scenario.id, startedAt: nowOf(deps), turns: 0, tokens: 0, finishedAt: null };
+}
+
+export async function handleTurn(deps: Deps, user: AuthUser, body: unknown) {
+  const { config, store } = deps;
   const { sessionId, scenarioId, history: rawHistory } = parseSessionBody(body, config);
   const scenario = findScenario(deps, scenarioId);
 
@@ -37,51 +70,75 @@ export async function handleTurn(deps: Deps, body: unknown) {
   if (countRole(history, "customer") >= config.maxTurns) {
     throw new ApiError(400, "call_over", "This call already reached its maximum length.");
   }
-  if (!budget.canTakeTurn(sessionId)) throw capError();
+  const call = await openCall(deps, user, sessionId, scenario, history.length === 0);
+  if (call.tokens >= config.sessionTokenCap - config.feedbackReserve) throw capError();
 
   const turn = customerTurnNumber(history);
-  const out = await callWithRetry({
-    llm: deps.llm,
-    system: buildCustomerSystem(scenario, turn, config.minTurns, config.maxTurns),
-    messages: buildTurnMessages(history, scenario),
-    maxTokens: 300,
-    parse: parseTurnOutput,
-    onUsage: (n) => budget.add(sessionId, n),
-  });
+  let spent = 0;
+  let out;
+  try {
+    out = await callWithRetry({
+      llm: deps.llm,
+      system: buildCustomerSystem(scenario, turn, config.minTurns, config.maxTurns),
+      messages: buildTurnMessages(history, scenario),
+      maxTokens: 300,
+      parse: parseTurnOutput,
+      onUsage: (n) => { spent += n; },
+    });
+  } catch (e) {
+    if (spent > 0) await store.recordUsage(call.id, spent, false);
+    throw e;
+  }
+  await store.recordUsage(call.id, spent, true);
 
   return {
     line: out.line,
     callEnded: resolveEnd(out.end, turn, config.minTurns, config.maxTurns),
     turnNumber: turn,
-    usage: { sessionTokensUsed: budget.used(sessionId), sessionTokenCap: budget.limit },
+    usage: { sessionTokensUsed: call.tokens + spent, sessionTokenCap: config.sessionTokenCap },
   };
 }
 
-export async function handleFeedback(deps: Deps, body: unknown) {
-  const { config, budget } = deps;
+export async function handleFeedback(deps: Deps, user: AuthUser, body: unknown) {
+  const { config, store } = deps;
   const { sessionId, scenarioId, history: rawHistory } = parseSessionBody(body, config);
   const scenario = findScenario(deps, scenarioId);
   const history = normalizeHistory(rawHistory);
 
+  const call = await store.getCall(sessionId);
+  if (!call || call.userId !== user.userId) throw notFound();
+  if (call.scenarioId !== scenario.id) throw new ApiError(400, "invalid_request", "Scenario does not match this call.");
+  const usage = (extra: number) => ({ sessionTokensUsed: call.tokens + extra, sessionTokenCap: config.sessionTokenCap });
+
+  // Asking again (e.g. after a dropped connection) returns what was already saved.
+  if (call.finishedAt) {
+    const saved = await store.getCallDetail(user.userId, call.id);
+    if (!saved) throw notFound();
+    return { callId: call.id, ...saved.feedback, usage: usage(0) };
+  }
+
   if (meaningfulAgentLines(history) < 2) {
     throw new ApiError(422, "not_enough_speech", "Not enough learner speech to give feedback.");
   }
-  if (!budget.canGiveFeedback(sessionId)) throw capError();
+  if (call.tokens >= config.sessionTokenCap) throw capError();
 
-  const onUsage = (n: number) => budget.add(sessionId, n);
-  const draft = await callWithRetry({
-    llm: deps.llm,
-    system: buildFeedbackSystem(scenario),
-    messages: [{ role: "user", content: buildFeedbackUser(history) }],
-    maxTokens: 1400,
-    parse: parseFeedbackOutput,
-    onUsage,
-  });
-  // Small models often drop accents or use tú/vos; a focused Spanish-only proofread fixes most of it.
-  const feedback = await polishSpanish(deps.llm, draft, onUsage);
-
-  return {
-    ...feedback,
-    usage: { sessionTokensUsed: budget.used(sessionId), sessionTokenCap: budget.limit },
-  };
+  let spent = 0;
+  const onUsage = (n: number) => { spent += n; };
+  try {
+    const draft = await callWithRetry({
+      llm: deps.llm,
+      system: buildFeedbackSystem(scenario),
+      messages: [{ role: "user", content: buildFeedbackUser(history) }],
+      maxTokens: 1400,
+      parse: parseFeedbackOutput,
+      onUsage,
+    });
+    // Small models often drop accents or use tú/vos; a focused Spanish-only proofread fixes most of it.
+    const feedback = await polishSpanish(deps.llm, draft, onUsage);
+    const durationSec = (nowOf(deps).getTime() - call.startedAt.getTime()) / 1000;
+    await store.saveFeedback(call.id, durationSec, feedback);
+    return { callId: call.id, ...feedback, usage: usage(spent) };
+  } finally {
+    if (spent > 0) await store.recordUsage(call.id, spent, false);
+  }
 }

@@ -2,14 +2,14 @@ import { ApiError } from "./errors.js";
 import type { Message } from "./types.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SESSION_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const SCENARIO_ID = /^[a-z0-9-]{1,64}$/;
 
-export function isDeviceId(v: unknown): v is string {
+export function isUuid(v: unknown): v is string {
   return typeof v === "string" && UUID.test(v);
 }
 
 export interface SessionBody {
+  /** The call's id: a UUID the page generates; the first turn creates the call with it. */
   sessionId: string;
   scenarioId: string;
   history: Message[];
@@ -25,9 +25,7 @@ export function parseSessionBody(
     throw bad("Body must be a JSON object.");
   }
   const b = body as Record<string, unknown>;
-  if (typeof b.sessionId !== "string" || !SESSION_ID.test(b.sessionId)) {
-    throw bad("sessionId must be 8-64 letters, numbers, - or _.");
-  }
+  if (!isUuid(b.sessionId)) throw bad("sessionId must be a UUID.");
   if (typeof b.scenarioId !== "string" || !SCENARIO_ID.test(b.scenarioId)) {
     throw bad("scenarioId is invalid.");
   }

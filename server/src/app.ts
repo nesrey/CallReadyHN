@@ -1,16 +1,29 @@
 import express, { type NextFunction, type Request, type Response } from "express";
+import { getMe, getMyCall, isAdmin, listMyCalls, updateMe } from "./account.js";
+import {
+  adminGetSettings, adminListScenarios, adminListUsers, adminSaveScenario, adminSaveSettings, adminSetPro,
+  adminSetScenarioEnabled, adminUsage,
+} from "./admin.js";
+import type { Auth, AuthUser } from "./auth.js";
 import { ApiError } from "./errors.js";
 import { handleFeedback, handleTurn, type Deps } from "./handlers.js";
 import { RateLimiter } from "./limits.js";
 import { toSummary } from "./scenarios/load.js";
-import { isDeviceId } from "./validate.js";
 
-type Handler = (req: Request, res: Response) => Promise<void>;
-const wrap = (fn: Handler) => (req: Request, res: Response, next: NextFunction) => {
-  fn(req, res).catch(next);
+export interface AppDeps extends Deps {
+  auth: Auth;
+  /** Handed to the page so it can sign people in. Both values are public by design. */
+  publicConfig: { supabaseUrl: string; supabaseKey: string };
+}
+
+type Handler = (req: Request, res: Response) => Promise<unknown>;
+/** Run an async handler and send its result as JSON; errors go to the error middleware. */
+const json = (fn: Handler) => (req: Request, res: Response, next: NextFunction) => {
+  fn(req, res).then((out) => res.json(out), next);
 };
+const userOf = (res: Response) => res.locals.user as AuthUser;
 
-export function createApp(deps: Deps, opts: { webDir: string }) {
+export function createApp(deps: AppDeps, opts: { webDir: string }) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "32kb" }));
@@ -28,8 +41,8 @@ export function createApp(deps: Deps, opts: { webDir: string }) {
       res.setHeader("Access-Control-Expose-Headers", "Retry-After");
       res.append("Vary", "Origin");
       if (req.method === "OPTIONS") {
-        res.setHeader("Access-Control-Allow-Methods", "GET, POST");
-        res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Device-Id");
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
         res.setHeader("Access-Control-Max-Age", "600");
         res.status(204).end();
         return;
@@ -40,18 +53,29 @@ export function createApp(deps: Deps, opts: { webDir: string }) {
 
   const turnLimiter = new RateLimiter(deps.config.turnRate.max, deps.config.turnRate.windowMs);
   const feedbackLimiter = new RateLimiter(deps.config.feedbackRate.max, deps.config.feedbackRate.windowMs);
+  const generalLimiter = new RateLimiter(240, 10 * 60 * 1000);
 
-  const requireDevice = (req: Request, res: Response, next: NextFunction) => {
-    const id = req.header("x-device-id");
-    if (!isDeviceId(id)) {
-      return next(new ApiError(400, "invalid_request", "X-Device-Id header must be a UUID."));
-    }
-    res.locals.deviceId = id.toLowerCase();
+  /** Signed-in learners only. Creates the profile on first use. */
+  const requireUser = (req: Request, res: Response, next: NextFunction) => {
+    const header = req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    deps.auth
+      .verify(token)
+      .then(async (user) => {
+        await deps.store.touchProfile(user.userId, user.email);
+        res.locals.user = user;
+        next();
+      })
+      .catch(next);
+  };
+
+  const requireAdmin = (_req: Request, res: Response, next: NextFunction) => {
+    if (!isAdmin(deps, userOf(res))) return next(new ApiError(403, "forbidden", "Admins only."));
     next();
   };
 
   const limit = (limiter: RateLimiter) => (_req: Request, res: Response, next: NextFunction) => {
-    const r = limiter.check(res.locals.deviceId as string);
+    const r = limiter.check(userOf(res).userId);
     if (!r.allowed) {
       res.setHeader("Retry-After", String(r.retryAfterSec));
       return next(new ApiError(429, "rate_limited", "Too many requests.", r.retryAfterSec));
@@ -64,27 +88,41 @@ export function createApp(deps: Deps, opts: { webDir: string }) {
     res.json({ ok: true, version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? "local" });
   });
 
-  app.get("/scenarios", (_req: Request, res: Response) => {
-    res.json({ scenarios: [...deps.scenarios.values()].map(toSummary) });
+  app.get("/config", (_req: Request, res: Response) => {
+    res.json(deps.publicConfig);
   });
 
-  app.post(
-    "/session/turn",
-    requireDevice,
-    limit(turnLimiter),
-    wrap(async (req: Request, res: Response) => {
-      res.json(await handleTurn(deps, req.body));
-    }),
-  );
+  app.get("/scenarios", (_req: Request, res: Response) => {
+    res.json({ scenarios: deps.catalog.enabled().map(toSummary) });
+  });
 
+  const user = [requireUser, limit(generalLimiter)];
+  app.get("/me", ...user, json((_req, res) => getMe(deps, userOf(res))));
+  app.put("/me", ...user, json((req, res) => updateMe(deps, userOf(res), req.body)));
+  app.get("/calls", ...user, json((_req, res) => listMyCalls(deps, userOf(res))));
+  app.get("/calls/:id", ...user, json((req, res) => getMyCall(deps, userOf(res), String(req.params.id))));
+
+  app.post("/session/turn", requireUser, limit(turnLimiter), json((req, res) => handleTurn(deps, userOf(res), req.body)));
   app.post(
     "/session/feedback",
-    requireDevice,
+    requireUser,
     limit(feedbackLimiter),
-    wrap(async (req: Request, res: Response) => {
-      res.json(await handleFeedback(deps, req.body));
-    }),
+    json((req, res) => handleFeedback(deps, userOf(res), req.body)),
   );
+
+  const admin = [requireUser, requireAdmin];
+  app.get("/admin/users", ...admin, json((req) => adminListUsers(deps, req.query as Record<string, unknown>)));
+  app.post("/admin/users/:id/pro", ...admin, json((req) => adminSetPro(deps, String(req.params.id), req.body)));
+  app.get("/admin/usage", ...admin, json((req) => adminUsage(deps, req.query as Record<string, unknown>)));
+  app.get("/admin/scenarios", ...admin, json(async () => adminListScenarios(deps)));
+  app.put("/admin/scenarios/:id", ...admin, json((req) => adminSaveScenario(deps, String(req.params.id), req.body)));
+  app.post(
+    "/admin/scenarios/:id/enabled",
+    ...admin,
+    json((req) => adminSetScenarioEnabled(deps, String(req.params.id), req.body)),
+  );
+  app.get("/admin/settings", ...admin, json(() => adminGetSettings(deps)));
+  app.put("/admin/settings", ...admin, json((req) => adminSaveSettings(deps, req.body)));
 
   app.use(express.static(opts.webDir));
 

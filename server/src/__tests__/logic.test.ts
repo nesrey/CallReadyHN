@@ -5,7 +5,7 @@ import {
 } from "../turnLogic.js";
 import { buildCustomerSystem, buildFeedbackSystem, buildFeedbackUser, buildTurnMessages } from "../llm/prompts.js";
 import { loadScenariosFromDisk } from "../scenarios/load.js";
-import { parseSessionBody, isDeviceId } from "../validate.js";
+import { parseSessionBody, isUuid } from "../validate.js";
 import { loadConfig } from "../config.js";
 import { ApiError } from "../errors.js";
 import { exchanges } from "./helpers.js";
@@ -94,30 +94,30 @@ test("feedback prompts: Spanish fields, injection guard, tag-escaped transcript"
 test("parseSessionBody validates shape, roles and limits", () => {
   const limits = { maxHistory: 24, maxChars: 500 };
   const ok = parseSessionBody(
-    { sessionId: "abcd1234", scenarioId: "billing-dispute", history: [{ role: "customer", text: " Hi " }] },
+    { sessionId: "3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01", scenarioId: "billing-dispute", history: [{ role: "customer", text: " Hi " }] },
     limits,
   );
   assert.equal(ok.history[0]!.text, "Hi");
   const tryBody = (b: unknown) => () => parseSessionBody(b, limits);
   assert.throws(tryBody(null), ApiError);
   assert.throws(tryBody({ sessionId: "x", scenarioId: "a", history: [] }), /sessionId/);
-  assert.throws(tryBody({ sessionId: "abcd1234", scenarioId: "A B", history: [] }), /scenarioId/);
-  assert.throws(tryBody({ sessionId: "abcd1234", scenarioId: "a", history: [{ role: "bot", text: "x" }] }), /role/);
-  assert.throws(tryBody({ sessionId: "abcd1234", scenarioId: "a", history: [{ role: "agent", text: "" }] }), /empty/);
+  assert.throws(tryBody({ sessionId: "3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01", scenarioId: "A B", history: [] }), /scenarioId/);
+  assert.throws(tryBody({ sessionId: "3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01", scenarioId: "a", history: [{ role: "bot", text: "x" }] }), /role/);
+  assert.throws(tryBody({ sessionId: "3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01", scenarioId: "a", history: [{ role: "agent", text: "" }] }), /empty/);
   assert.throws(
-    tryBody({ sessionId: "abcd1234", scenarioId: "a", history: [{ role: "agent", text: "x".repeat(501) }] }),
+    tryBody({ sessionId: "3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01", scenarioId: "a", history: [{ role: "agent", text: "x".repeat(501) }] }),
     /longer than/,
   );
   assert.throws(
-    tryBody({ sessionId: "abcd1234", scenarioId: "a", history: exchanges(13) }),
+    tryBody({ sessionId: "3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01", scenarioId: "a", history: exchanges(13) }),
     /at most 24/,
   );
 });
 
-test("isDeviceId accepts UUIDs only", () => {
-  assert.equal(isDeviceId("3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01"), true);
-  assert.equal(isDeviceId("not-a-uuid"), false);
-  assert.equal(isDeviceId(undefined), false);
+test("isUuid accepts UUIDs only", () => {
+  assert.equal(isUuid("3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01"), true);
+  assert.equal(isUuid("not-a-uuid"), false);
+  assert.equal(isUuid(undefined), false);
 });
 
 test("loadConfig requires the API key and applies defaults", () => {

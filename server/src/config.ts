@@ -22,6 +22,22 @@ export interface Config {
   maxChars: number;
   /** Other sites allowed to call the API from a browser (CORS), e.g. the GitHub Pages site. */
   allowedOrigins: string[];
+  /** Lower-cased emails that may open the admin page. */
+  adminEmails: string[];
+  /** IANA time zone that decides where "today" starts for the free daily limit and usage charts. */
+  timeZone: string;
+}
+
+/** Accounts and database. Separate from Config so the AI/server settings can be tested on their own. */
+export interface AccountConfig {
+  supabaseUrl: string;
+  /** Public key the page uses to sign people in (sb_publishable_... or the legacy anon key). */
+  supabaseKey: string;
+  /** Only for older projects that still sign tokens with a shared secret (HS256). */
+  supabaseJwtSecret: string;
+  databaseUrl: string;
+  /** PEM text of Supabase's root certificate; when set, the database certificate is verified. */
+  databaseSslCa: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -42,6 +58,16 @@ function origins(env: Env): string[] {
     }
     return u.origin;
   });
+}
+
+function timeZone(env: Env): string {
+  const tz = (env.TIMEZONE ?? "").trim() || "America/Tegucigalpa";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+  } catch {
+    throw new Error(`TIMEZONE must be an IANA time zone like America/Tegucigalpa (got "${tz}")`);
+  }
+  return tz;
 }
 
 function int(env: Env, key: string, def: number, min = 1): number {
@@ -107,5 +133,31 @@ export function loadConfig(env: Env): Config {
     maxHistory: 24,
     maxChars: 500,
     allowedOrigins: origins(env),
+    adminEmails: (env.ADMIN_EMAILS ?? "nesrey@gmail.com")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+    timeZone: timeZone(env),
+  };
+}
+
+export function loadAccountConfig(env: Env): AccountConfig {
+  const need = (key: string) => {
+    const v = (env[key] ?? "").trim();
+    if (!v) throw new Error(`${key} is missing. See "Accounts (Supabase)" in the README.`);
+    return v;
+  };
+  const supabaseUrl = need("SUPABASE_URL").replace(/\/+$/, "");
+  if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(supabaseUrl)) {
+    throw new Error(`SUPABASE_URL must look like https://<project>.supabase.co (got "${supabaseUrl}")`);
+  }
+  const supabaseKey = (env.SUPABASE_PUBLISHABLE_KEY ?? "").trim() || (env.SUPABASE_ANON_KEY ?? "").trim();
+  if (!supabaseKey) throw new Error("SUPABASE_PUBLISHABLE_KEY is missing. See \"Accounts (Supabase)\" in the README.");
+  return {
+    supabaseUrl,
+    supabaseKey,
+    supabaseJwtSecret: (env.SUPABASE_JWT_SECRET ?? "").trim(),
+    databaseUrl: need("DATABASE_URL"),
+    databaseSslCa: (env.DATABASE_SSL_CA ?? "").trim(),
   };
 }

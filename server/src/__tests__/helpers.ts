@@ -1,8 +1,15 @@
+import { PGlite } from "@electric-sql/pglite";
+import { PgStore } from "../db/pgStore.js";
+import { loadScenariosFromDisk } from "../scenarios/load.js";
 import type { LlmClient, LlmRequest, LlmResponse, Message } from "../types.js";
 
 export class MockLlm implements LlmClient {
   calls: LlmRequest[] = [];
   constructor(private responses: Array<string | Error>, private tokens = { in: 100, out: 50 }) {}
+  /** Queue more responses (for tests that share one mock). */
+  push(...more: Array<string | Error>): void {
+    this.responses.push(...more);
+  }
   async complete(req: LlmRequest): Promise<LlmResponse> {
     this.calls.push(req);
     const next = this.responses.shift();
@@ -36,3 +43,11 @@ export const goodFeedback = JSON.stringify({
   })),
   overallSummaryEs: "Buen trabajo.",
 });
+
+/** A fresh in-memory Postgres (PGlite) with the schema and the seed scenarios. */
+export async function freshStore(): Promise<PgStore> {
+  const store = new PgStore(new PGlite());
+  await store.migrate();
+  await store.seedScenarios(loadScenariosFromDisk());
+  return store;
+}
