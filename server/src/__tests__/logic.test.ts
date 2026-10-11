@@ -121,8 +121,9 @@ test("isDeviceId accepts UUIDs only", () => {
 });
 
 test("loadConfig requires the API key and applies defaults", () => {
-  assert.throws(() => loadConfig({}), /ANTHROPIC_API_KEY is missing/);
+  assert.throws(() => loadConfig({}), /No API key found/);
   const c = loadConfig({ ANTHROPIC_API_KEY: "k" });
+  assert.equal(c.provider, "anthropic");
   assert.equal(c.model, "claude-haiku-5-5");
   assert.equal(c.minTurns, 6);
   assert.equal(c.maxTurns, 10);

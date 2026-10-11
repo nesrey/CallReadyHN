@@ -3,7 +3,11 @@ export interface RateConfig {
   max: number;
 }
 
+export const PROVIDERS = ["anthropic", "gemini"] as const;
+export type Provider = (typeof PROVIDERS)[number];
+
 export interface Config {
+  provider: Provider;
   apiKey: string;
   model: string;
   port: number;
@@ -51,12 +55,29 @@ function int(env: Env, key: string, def: number, min = 1): number {
 }
 
 export function loadConfig(env: Env): Config {
-  const apiKey = (env.ANTHROPIC_API_KEY ?? "").trim();
+  const keys: Record<Provider, string> = {
+    anthropic: (env.ANTHROPIC_API_KEY ?? "").trim(),
+    gemini: (env.GEMINI_API_KEY ?? "").trim(),
+  };
+  // LLM_PROVIDER picks explicitly; otherwise use whichever key is set (Anthropic first).
+  const wanted = (env.LLM_PROVIDER ?? "").trim().toLowerCase();
+  if (wanted && !(PROVIDERS as readonly string[]).includes(wanted)) {
+    throw new Error(`LLM_PROVIDER must be one of ${PROVIDERS.join(", ")} (got "${wanted}")`);
+  }
+  const provider: Provider = (wanted as Provider) || (keys.anthropic ? "anthropic" : keys.gemini ? "gemini" : "anthropic");
+  const apiKey = keys[provider];
   if (!apiKey) {
+    const keyName = provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY";
     throw new Error(
-      "ANTHROPIC_API_KEY is missing. Copy server/.env.example to server/.env and set it.",
+      wanted
+        ? `${keyName} is missing (LLM_PROVIDER=${provider}). Set it in server/.env.`
+        : "No API key found. Set ANTHROPIC_API_KEY or GEMINI_API_KEY (copy server/.env.example to server/.env).",
     );
   }
+  const model =
+    provider === "gemini"
+      ? (env.GEMINI_MODEL ?? "").trim() || "gemini-3.5-flash-lite"
+      : (env.ANTHROPIC_MODEL ?? "").trim() || "claude-haiku-5-5";
   const minTurns = int(env, "MIN_TURNS", 6);
   const maxTurns = int(env, "MAX_TURNS", 10);
   if (minTurns > maxTurns) throw new Error("MIN_TURNS cannot be greater than MAX_TURNS");
@@ -66,8 +87,9 @@ export function loadConfig(env: Env): Config {
   if (reserve >= cap) throw new Error("FEEDBACK_TOKEN_RESERVE must be lower than SESSION_TOKEN_CAP");
 
   return {
+    provider,
     apiKey,
-    model: (env.ANTHROPIC_MODEL ?? "").trim() || "claude-haiku-5-5",
+    model,
     port: int(env, "PORT", 3000),
     host: (env.HOST ?? "").trim() || "127.0.0.1",
     sessionTokenCap: cap,

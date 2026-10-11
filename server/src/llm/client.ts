@@ -42,6 +42,9 @@ export function createAnthropicClient(opts: {
         // Log details server-side only; never forward upstream bodies to the browser.
         const detail = await res.text().catch(() => "");
         console.error(`Anthropic API error ${res.status}: ${detail.slice(0, 300)}`);
+        if (res.status === 429) {
+          throw new ApiError(503, "llm_busy", "The language model's usage limit was reached. Try again later.");
+        }
         throw new ApiError(502, "llm_unavailable", "The language model is not available right now.");
       }
 

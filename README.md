@@ -4,7 +4,7 @@ Practice English call-center calls by voice. An AI plays the customer (or an HR 
 out loud or by typing, and you get feedback in Spanish with corrected English examples.
 
 - **Web app:** one file, `web/index.html` (Spanish UI, hash routing, `localStorage`).
-- **Server:** Node + Express + TypeScript in `server/`. It serves the page and holds the Anthropic API key.
+- **Server:** Node + Express + TypeScript in `server/`. It serves the page and holds the AI API key (Anthropic or Google Gemini).
 - **Voice:** browser `speechSynthesis` (customer voice) and Web Speech API `SpeechRecognition` (your mic).
 
 ```
@@ -31,13 +31,20 @@ npm install
 cp server/.env.example server/.env
 ```
 
-Edit `server/.env` and set `ANTHROPIC_API_KEY`. The key lives only in this file (it is git-ignored) and is never
-sent to the browser. The server refuses to start without it.
+Edit `server/.env` and set **one** AI key: `ANTHROPIC_API_KEY` (Claude, paid) or `GEMINI_API_KEY` (Google, has a free
+tier; get it at https://aistudio.google.com/apikey). The key lives only in this file (it is git-ignored) and is never
+sent to the browser. The server refuses to start without one.
+
+On Gemini's free tier Google may use the prompts (the practice-call transcripts) to improve its products, and the
+daily limits are low. Fine for a small pilot; tell testers not to share real personal details on calls.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | (required) | Your key |
-| `ANTHROPIC_MODEL` | `claude-haiku-5-5` | Model for customer and grader |
+| `ANTHROPIC_API_KEY` | | Claude key (one of the two keys is required) |
+| `ANTHROPIC_MODEL` | `claude-haiku-5-5` | Claude model for customer and grader |
+| `GEMINI_API_KEY` | | Google Gemini key |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini model for customer and grader |
+| `LLM_PROVIDER` | (auto) | `anthropic` or `gemini`; by default whichever key is set, Anthropic if both |
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | Use `HOST=0.0.0.0` only if you need other devices on your network |
 | `SESSION_TOKEN_CAP` | `20000` | Max tokens (input + output) per call, including feedback |
 | `FEEDBACK_TOKEN_RESERVE` | `4000` | Kept back so a call can always get its feedback |
@@ -66,7 +73,7 @@ The live pilot runs in two pieces:
   - Build command: `npm install --include=dev && npm run build -w server`
   - Start command: `npm run start -w server`
   - Health check path: `/health`
-  - Environment: `ANTHROPIC_API_KEY`, `HOST=0.0.0.0`, `ALLOWED_ORIGINS=https://nesrey.github.io` (Render sets `PORT`)
+  - Environment: `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY`), `HOST=0.0.0.0`, `ALLOWED_ORIGINS=https://nesrey.github.io` (Render sets `PORT`)
 
 When the page is on `*.github.io` it sends API calls to the address in `API_BASE` near the top of the script in
 `web/index.html`; everywhere else (local server) it uses its own site. Pushing to `main` redeploys both.
@@ -102,7 +109,7 @@ pilot testers and stop the tunnel when you are done.
 ## 5. Tests
 
 ```bash
-npm test          # 74 tests: scenarios, parsing/retry, limits, handlers, prompts, CORS, web logic
+npm test          # 79 tests: scenarios, parsing/retry, limits, handlers, prompts, CORS, Gemini, web logic
 npm run typecheck
 ```
 
@@ -125,7 +132,7 @@ Errors look like `{ "error": { "code": "…", "message": "…" } }`.
 
 Model output must be valid JSON; if it is not, the server retries once with the error fed back, then returns
 `502 llm_bad_output`. Error codes: `invalid_request`, `unknown_scenario`, `call_over`, `rate_limited`,
-`session_token_cap`, `not_enough_speech`, `llm_unavailable`, `llm_bad_output`.
+`session_token_cap`, `not_enough_speech`, `llm_unavailable`, `llm_busy` (provider quota hit), `llm_bad_output`.
 
 ## 7. Adding scenarios
 
@@ -150,9 +157,10 @@ in the browser only, so a user can bypass it by clearing site data. That is fine
 
 ## Troubleshooting
 
-- **"Startup failed: ANTHROPIC_API_KEY is missing"**: create `server/.env` from the example.
+- **"Startup failed: No API key found"**: create `server/.env` from the example, or add the key in Render → Environment.
+- **`llm_busy` errors on Gemini**: the free tier's per-minute or daily limit was hit; wait, or switch to a paid key.
 - **Mic button is greyed out**: not HTTPS/localhost, unsupported browser, or the model is still talking/answering.
 - **"El navegador no tiene permiso…"**: allow the microphone from the padlock in the address bar.
 - **Customer voice sounds robotic or is missing**: install an English voice in the OS or browser settings.
 - **`llm_unavailable` errors**: check the server log (upstream errors are logged there, never sent to the browser),
-  your API key, and the model name in `ANTHROPIC_MODEL`.
+  your API key, and the model name (`ANTHROPIC_MODEL` / `GEMINI_MODEL`).

@@ -271,7 +271,7 @@ function trendPoints(calls, n) {
 const $ = (s, el) => (el || document).querySelector(s);
 const root = () => $('#app');
 // Where the server is. Empty means this same site (local server). On GitHub Pages the page talks to the Render server.
-const API_BASE = location.hostname.endsWith('.github.io') ? 'https://callready.onrender.com' : '';
+const API_BASE = location.hostname.endsWith('.github.io') ? 'https://callreadyhn.onrender.com' : '';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const store = {
@@ -315,6 +315,7 @@ const ERR = {
   rate_limited: 'Hiciste muchas solicitudes seguidas. Esperá un momento y probá de nuevo.',
   session_token_cap: 'Esta llamada llegó a su límite de uso.',
   llm_unavailable: 'El servicio de IA no está disponible ahora. Intentá de nuevo en unos segundos.',
+  llm_busy: 'Se alcanzó el límite de uso de la IA por ahora. Probá de nuevo más tarde.',
   llm_bad_output: 'La IA dio una respuesta que no se pudo leer. Intentá de nuevo.',
   not_enough_speech: 'Hablaste muy poco en esta llamada. Necesitás al menos dos respuestas en inglés para recibir retroalimentación.',
   network: 'No hay conexión con el servidor. Revisá tu internet.',
