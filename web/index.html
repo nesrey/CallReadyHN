@@ -270,8 +270,9 @@ function trendPoints(calls, n) {
 /* ---------- helpers ---------- */
 const $ = (s, el) => (el || document).querySelector(s);
 const root = () => $('#app');
-// Where the server is. Empty means this same site (local server). On GitHub Pages the page talks to the Render server.
-const API_BASE = location.hostname.endsWith('.github.io') ? 'https://callreadyhn.onrender.com' : '';
+// Where the server is. Empty means this same site (local server). On the public site (callreadyhn.com or
+// GitHub Pages) the page talks to the Render server.
+const API_BASE = /(^|\.)(callreadyhn\.com|github\.io)$/i.test(location.hostname) ? 'https://callreadyhn.onrender.com' : '';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const store = {

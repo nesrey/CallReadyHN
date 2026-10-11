@@ -67,15 +67,15 @@ Open **http://localhost:3000** in Chrome or Edge.
 
 The live pilot runs in two pieces:
 
-- **Page:** GitHub Pages serves the repo root. `index.html` at the root redirects to `web/`, so
-  https://nesrey.github.io/CallReadyHN/ opens the app.
+- **Page:** GitHub Pages serves the repo root at **https://callreadyhn.com** (custom domain, DNS at GoDaddy). `index.html`
+  at the root redirects to `web/`. The old https://nesrey.github.io/CallReadyHN/ address forwards to the domain.
 - **Server:** a Render web service (free plan) built from this repo:
   - Build command: `npm install --include=dev && npm run build -w server`
   - Start command: `npm run start -w server`
   - Health check path: `/health`
-  - Environment: `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY`), `HOST=0.0.0.0`, `ALLOWED_ORIGINS=https://nesrey.github.io` (Render sets `PORT`)
+  - Environment: `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY`), `HOST=0.0.0.0`, `ALLOWED_ORIGINS=https://callreadyhn.com,https://www.callreadyhn.com,https://nesrey.github.io` (Render sets `PORT`)
 
-When the page is on `*.github.io` it sends API calls to the address in `API_BASE` near the top of the script in
+When the page is on `callreadyhn.com` or `*.github.io` it sends API calls to the address in `API_BASE` near the top of the script in
 `web/index.html`; everywhere else (local server) it uses its own site. Pushing to `main` redeploys both.
 
 The free Render plan sleeps after 15 minutes without traffic; the first request after that takes up to a minute
