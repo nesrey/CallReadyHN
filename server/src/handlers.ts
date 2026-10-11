@@ -1,6 +1,6 @@
 import type { Config } from "./config.js";
 import { ApiError } from "./errors.js";
-import { callWithRetry, parseFeedbackOutput, parseTurnOutput } from "./llm/parse.js";
+import { callWithRetry, parseFeedbackOutput, parseTurnOutput, spanishSpellingIssues } from "./llm/parse.js";
 import { buildCustomerSystem, buildFeedbackSystem, buildFeedbackUser, buildTurnMessages } from "./llm/prompts.js";
 import type { TokenBudget } from "./limits.js";
 import type { Scenario } from "./scenarios/load.js";
@@ -74,6 +74,7 @@ export async function handleFeedback(deps: Deps, body: unknown) {
     maxTokens: 1400,
     parse: parseFeedbackOutput,
     onUsage: (n) => budget.add(sessionId, n),
+    check: spanishSpellingIssues,
   });
 
   return {

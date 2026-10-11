@@ -109,7 +109,7 @@ pilot testers and stop the tunnel when you are done.
 ## 5. Tests
 
 ```bash
-npm test          # 79 tests: scenarios, parsing/retry, limits, handlers, prompts, CORS, Gemini, web logic
+npm test          # 88 tests: scenarios, parsing/retry, limits, handlers, prompts, CORS, Gemini, Spanish spelling, web logic
 npm run typecheck
 ```
 
