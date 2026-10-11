@@ -1,6 +1,7 @@
 import type { Config } from "./config.js";
 import { ApiError } from "./errors.js";
-import { callWithRetry, parseFeedbackOutput, parseTurnOutput, spanishSpellingIssues } from "./llm/parse.js";
+import { callWithRetry, parseFeedbackOutput, parseTurnOutput } from "./llm/parse.js";
+import { polishSpanish } from "./llm/spanish.js";
 import { buildCustomerSystem, buildFeedbackSystem, buildFeedbackUser, buildTurnMessages } from "./llm/prompts.js";
 import type { TokenBudget } from "./limits.js";
 import type { Scenario } from "./scenarios/load.js";
@@ -67,15 +68,17 @@ export async function handleFeedback(deps: Deps, body: unknown) {
   }
   if (!budget.canGiveFeedback(sessionId)) throw capError();
 
-  const feedback = await callWithRetry({
+  const onUsage = (n: number) => budget.add(sessionId, n);
+  const draft = await callWithRetry({
     llm: deps.llm,
     system: buildFeedbackSystem(scenario),
     messages: [{ role: "user", content: buildFeedbackUser(history) }],
     maxTokens: 1400,
     parse: parseFeedbackOutput,
-    onUsage: (n) => budget.add(sessionId, n),
-    check: spanishSpellingIssues,
+    onUsage,
   });
+  // Small models often drop accents or use tú/vos; a focused Spanish-only proofread fixes most of it.
+  const feedback = await polishSpanish(deps.llm, draft, onUsage);
 
   return {
     ...feedback,

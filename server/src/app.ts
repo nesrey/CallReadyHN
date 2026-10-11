@@ -60,7 +60,8 @@ export function createApp(deps: Deps, opts: { webDir: string }) {
   };
 
   app.get("/health", (_req: Request, res: Response) => {
-    res.json({ ok: true });
+    // Render sets RENDER_GIT_COMMIT; it shows which commit is live after a deploy.
+    res.json({ ok: true, version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? "local" });
   });
 
   app.get("/scenarios", (_req: Request, res: Response) => {
