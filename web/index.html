@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0C2340">
+<title>CallReady</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F3F6F9; --card:#fff; --ink:#0F2438; --muted:#566779; --line:#D8E0E8;
+  --cobalt:#1556C0; --cobalt-d:#0F4299; --maize:#F2B33D; --night:#0C2340; --night2:#16386A;
+  --good:#17835A; --bad:#B93A3A;
+  --display:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --body:'Figtree',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.5 var(--body);-webkit-font-smoothing:antialiased}
+body.in-call{background:var(--night)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:inherit}
+a.btn,a.icon-btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+a.btn.block{display:flex}
+:focus-visible{outline:3px solid var(--cobalt);outline-offset:2px}
+.call :focus-visible{outline-color:var(--maize)}
+h1,h2{font-family:var(--display);margin:0;letter-spacing:-.01em;line-height:1.15}
+h1{font-size:28px;font-weight:700}
+h2{font-size:20px;font-weight:700}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+#app{max-width:640px;margin:0 auto;min-height:100%;padding:env(safe-area-inset-top) 16px calc(88px + env(safe-area-inset-bottom))}
+.top{display:flex;align-items:center;gap:10px;padding:22px 0 14px}
+.top h1{flex:1}
+.lead{font-size:17px;color:var(--muted);margin:8px 0 22px;max-width:52ch}
+section.block{margin-top:26px}
+section.block>h2{margin-bottom:12px}
+
+/* buttons */
+.btn{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:12px 18px;font-weight:600;min-height:48px}
+.btn.primary{background:var(--cobalt);border-color:var(--cobalt);color:#fff}
+.btn.primary:hover:not(:disabled){background:var(--cobalt-d)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.block{display:block;width:100%}
+.stack{display:grid;gap:10px;margin-top:22px}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* tabs */
+.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom);z-index:10}
+.tabs-in{display:flex;width:100%;max-width:640px}
+.tabs a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px 9px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:600}
+.tabs a[aria-current=page]{color:var(--cobalt)}
+
+/* onboarding */
+fieldset{border:0;padding:0;margin:0 0 24px}
+legend{font-family:var(--display);font-weight:700;font-size:20px;margin-bottom:10px;padding:0}
+.choice{display:block;width:100%;text-align:left;background:var(--card);border:2px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+.choice b{display:block;font-size:17px}
+.choice span{color:var(--muted);font-size:15px}
+.choice[aria-pressed=true]{border-color:var(--cobalt);background:#EAF1FD}
+
+/* scenario list */
+.counter{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:15px}
+.counter b{font-family:var(--display)}
+.sc{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:start;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:12px}
+.sc:hover{border-color:var(--cobalt)}
+.sc-main{display:grid;gap:3px}
+.sc-main b{font-size:17px;line-height:1.25}
+.sc-main .who{font-size:14px;color:var(--muted)}
+.sc-main .fit{font-size:14px;color:var(--good);font-weight:600}
+.lvl{display:inline-flex;align-items:center;justify-content:center;min-width:48px;height:32px;padding:0 10px;border-radius:99px;font-weight:700;font-size:14px;font-family:var(--display)}
+.lvl-A2{background:#E1F3EA;color:#0E6B47}
+.lvl-B1{background:#E4EDFB;color:#0F4299}
+.lvl-B2{background:#FBEBC8;color:#7A4E00}
+.sc.locked{background:#F8FAFC}
+.sc-end{display:flex;align-items:center;gap:6px;font-weight:600;font-size:14px;color:var(--muted);padding-top:4px}
+.note{background:#FFF6DE;border:1px solid #EBCB7C;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:15px}
+.note.err{background:#FBE9E9;border-color:#E4B3B3}
+.note .btn{margin-top:10px;min-height:40px;padding:8px 14px}
+
+/* call */
+.call{position:fixed;inset:0;z-index:20;background:var(--night);color:#fff;display:flex;flex-direction:column;max-width:640px;margin:0 auto;padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}
+.call-top{display:flex;align-items:center;justify-content:space-between;padding:14px 0 4px}
+.timer{font-family:var(--display);font-weight:600;font-size:18px;font-variant-numeric:tabular-nums;opacity:.85}
+.hang{background:var(--bad);border:0;color:#fff;border-radius:12px;padding:10px 18px;font-weight:700;min-height:44px}
+.caller{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding:6px 0 4px}
+.avatar{width:76px;height:76px;border-radius:50%;background:var(--night2);display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:28px;border:3px solid rgba(255,255,255,.18);transition:border-color .2s}
+.avatar.speaking{border-color:var(--maize)}
+.cname{font-family:var(--display);font-weight:700;font-size:22px;margin-top:6px}
+.cstatus{font-size:15px;color:rgba(255,255,255,.78);min-height:22px}
+.wave{display:flex;gap:5px;height:28px;align-items:center;justify-content:center;margin:6px 0}
+.wave span{width:5px;height:8px;border-radius:3px;background:rgba(255,255,255,.3)}
+.wave.on span{background:var(--maize);animation:wv 900ms ease-in-out infinite}
+.wave.on span:nth-child(2){animation-delay:-.7s}
+.wave.on span:nth-child(3){animation-delay:-.4s}
+.wave.on span:nth-child(4){animation-delay:-.55s}
+.wave.on span:nth-child(5){animation-delay:-.2s}
+@keyframes wv{0%,100%{height:8px}50%{height:26px}}
+.transcript{flex:1;overflow-y:auto;padding:6px 2px 10px;display:flex;flex-direction:column}
+.b{max-width:86%;padding:10px 14px;border-radius:16px;margin:5px 0;font-size:16px;line-height:1.45;overflow-wrap:anywhere}
+.b.c{background:rgba(255,255,255,.12);border-bottom-left-radius:4px;align-self:flex-start}
+.b.a{background:var(--maize);color:#2A1D00;border-bottom-right-radius:4px;align-self:flex-end}
+.b.live{background:rgba(242,179,61,.25);color:#fff;font-style:italic;align-self:flex-end;border-bottom-right-radius:4px}
+.call .note{color:var(--ink);margin:6px 0}
+#hint .note{margin:4px 0 0}
+.bar{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 0 12px}
+.mic{width:56px;height:56px;border-radius:50%;border:0;background:var(--maize);color:#2A1D00;display:grid;place-items:center;position:relative}
+.mic:disabled{opacity:.4;cursor:not-allowed}
+.mic.on{background:#fff;color:var(--bad)}
+.mic.on::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid #fff;animation:ring 1.2s ease-out infinite}
+@keyframes ring{from{opacity:.9;transform:scale(.9)}to{opacity:0;transform:scale(1.3)}}
+.bar input{min-width:0;height:48px;border-radius:12px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;padding:0 14px;font-size:16px}
+.bar input::placeholder{color:rgba(255,255,255,.55)}
+.bar input:disabled{opacity:.5}
+.send{height:48px;border-radius:12px;border:0;background:#fff;color:var(--night);font-weight:700;padding:0 16px}
+.send:disabled{opacity:.5;cursor:not-allowed}
+.skip{background:none;border:0;color:rgba(255,255,255,.75);text-decoration:underline;font-size:14px;padding:4px 8px}
+.overlay{position:absolute;inset:0;background:var(--night);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;z-index:5}
+.overlay p{max-width:36ch;font-size:17px}
+.overlay .btn{min-width:200px}
+.spinner{width:34px;height:34px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:var(--maize);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* feedback */
+.avg{display:flex;align-items:baseline;gap:10px;margin:4px 0 6px}
+.avg-n{font-family:var(--display);font-weight:700;font-size:56px;line-height:1}
+.scores{display:grid;gap:12px}
+.score{display:grid;grid-template-columns:132px 1fr 28px;gap:10px;align-items:center;font-size:15px}
+.meter{height:10px;border-radius:99px;background:#E3E9F0;overflow:hidden}
+.meter i{display:block;height:100%;border-radius:99px;background:var(--cobalt)}
+.meter i.lo{background:var(--bad)}
+.meter i.hi{background:var(--good)}
+.score b{text-align:right;font-family:var(--display)}
+.fix{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:12px;display:grid;gap:8px}
+.fix .row{display:grid;grid-template-columns:62px 1fr;gap:10px}
+.fix .tag{font-size:14px;font-weight:600}
+.said .tag{color:var(--bad)} .better .tag{color:var(--good)}
+.said q{background:#FBE9E9;padding:1px 4px;border-radius:4px}
+.better q{background:#E1F3EA;padding:1px 4px;border-radius:4px}
+q{quotes:none}
+.why{border-top:1px solid var(--line);padding-top:8px;color:var(--ink)}
+.phrase{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-bottom:10px}
+.phrase b{font-size:17px}
+.phrase .btn{min-height:40px;padding:8px 14px}
+
+/* progress */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.stat b{display:block;font-family:var(--display);font-size:30px;line-height:1.1}
+.stat span{font-size:14px;color:var(--muted)}
+.chart{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px}
+.chart svg{display:block;width:100%;height:auto}
+.hist{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin-bottom:10px}
+.hist .sc-n{font-family:var(--display);font-weight:700;font-size:22px}
+.empty{background:var(--card);border:1px dashed #B9C6D3;border-radius:16px;padding:22px;text-align:center}
+.empty .btn{margin-top:12px}
+
+/* settings, pro */
+.row-set{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+.row-set small{display:block;color:var(--muted);font-size:14px}
+input.sw{appearance:none;-webkit-appearance:none;flex:none;width:48px;height:28px;border-radius:99px;background:#B9C6D3;position:relative;cursor:pointer;transition:background .15s}
+input.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .15s}
+input.sw:checked{background:var(--cobalt)}
+input.sw:checked::after{transform:translateX(20px)}
+.benefits{list-style:none;padding:0;margin:18px 0;display:grid;gap:10px}
+.benefits li{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.benefits b{display:block}
+.danger{color:var(--bad);border-color:#E4B3B3}
+
+@media (prefers-reduced-motion:reduce){
+  .wave.on span{animation:none;height:18px}
+  .mic.on::after{animation:none;opacity:.6}
+  .spinner{animation-duration:2.4s}
+}
+@media (max-width:380px){ .score{grid-template-columns:104px 1fr 26px} h1{font-size:25px} }
+</style>
+</head>
+<body>
+<div id="app"><noscript>CallReady necesita JavaScript.</noscript></div>
+
+<script>
+/* LOGIC:START — pure functions, unit-tested from server/src/__tests__/web-logic.test.ts */
+const LEVELS = ['A2', 'B1', 'B2'];
+const FREE_DAILY_LIMIT = 2;
+const SCORE_KEYS = ['fluency', 'grammar', 'vocabulary', 'empathyPoliteness', 'callFlow'];
+
+function dateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+function dayNumber(key) {
+  const p = key.split('-').map(Number);
+  return Math.floor(Date.UTC(p[0], p[1] - 1, p[2]) / 86400000);
+}
+
+// dateKeys: local 'YYYY-MM-DD' strings with at least one call. today: Date.
+// The current streak stays alive if the last practice day was today or yesterday.
+function computeStreak(dateKeys, today) {
+  const days = Array.from(new Set(dateKeys)).map(dayNumber).sort(function (a, b) { return a - b; });
+  let best = 0, run = 0, prev = null;
+  for (const d of days) {
+    run = prev !== null && d === prev + 1 ? run + 1 : 1;
+    if (run > best) best = run;
+    prev = d;
+  }
+  const todayN = dayNumber(dateKey(today));
+  const last = days.length ? days[days.length - 1] : null;
+  let current = 0;
+  if (last !== null && (last === todayN || last === todayN - 1)) {
+    current = 1;
+    let i = days.length - 1;
+    while (i > 0 && days[i - 1] === days[i] - 1) { current++; i--; }
+  }
+  return { current: current, best: best };
+}
+
+function callsToday(starts, now) {
+  const k = dateKey(now);
+  return starts.filter(function (s) { return dateKey(new Date(s)) === k; }).length;
+}
+
+// Free: 2 calls per day, free-tier scenarios only. Pro: no limits.
+function canStartCall(o) {
+  if (o.isPro) return { ok: true, reason: null };
+  if (o.scenario.tier === 'pro') return { ok: false, reason: 'pro_required' };
+  if (o.startsToday >= FREE_DAILY_LIMIT) return { ok: false, reason: 'daily_limit' };
+  return { ok: true, reason: null };
+}
+
+function avgScores(scores) {
+  const vals = SCORE_KEYS.map(function (k) { return Number(scores[k]); }).filter(Number.isFinite);
+  if (!vals.length) return 0;
+  return Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length * 10) / 10;
+}
+
+// Levels closest to the learner first; interviews first for job seekers. Stable otherwise.
+function sortScenarios(list, profile) {
+  const lv = LEVELS.indexOf(profile && profile.level);
+  return list
+    .map(function (s, i) {
+      let k = lv < 0 ? 0 : Math.abs(LEVELS.indexOf(s.difficulty) - lv);
+      if (profile && profile.goal === 'job' && s.category === 'interview') k -= 0.5;
+      return { s: s, i: i, k: k };
+    })
+    .sort(function (a, b) { return a.k - b.k || a.i - b.i; })
+    .map(function (x) { return x.s; });
+}
+
+function formatTime(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+function trendPoints(calls, n) {
+  return calls.slice()
+    .sort(function (a, b) { return a.startedAt < b.startedAt ? -1 : a.startedAt > b.startedAt ? 1 : 0; })
+    .slice(-(n || 20))
+    .map(function (c) { return c.avg; });
+}
+/* LOGIC:END */
+
+/* ---------- helpers ---------- */
+const $ = (s, el) => (el || document).querySelector(s);
+const root = () => $('#app');
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const store = {
+  get(k, f) { try { const v = localStorage.getItem('callready.' + k); return v === null ? f : JSON.parse(v); } catch { return f; } },
+  set(k, v) { try { localStorage.setItem('callready.' + k, JSON.stringify(v)); } catch { /* storage full or blocked */ } },
+};
+
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0'));
+  return [h.slice(0, 4).join(''), h.slice(4, 6).join(''), h.slice(6, 8).join(''), h.slice(8, 10).join(''), h.slice(10).join('')].join('-');
+}
+function deviceId() {
+  let id = store.get('deviceId', null);
+  if (!id) { id = uuid(); store.set('deviceId', id); }
+  return id;
+}
+
+const isPro = () => store.get('isPro', false) === true;
+const autoSend = () => store.get('autoSend', true) !== false;
+
+const I = {
+  phone: '<svg class="i" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>',
+  chart: '<svg class="i" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16M8 16l4-5 3 3 5-7"/></svg>',
+  gear: '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>',
+  lock: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  back: '<svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  mic: '<svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  speaker: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg>',
+};
+
+const SCORE_LABELS = {
+  fluency: 'Fluidez', grammar: 'Gramática', vocabulary: 'Vocabulario',
+  empathyPoliteness: 'Empatía y cortesía', callFlow: 'Estructura de la llamada',
+};
+const LEVEL_NAMES = { A2: 'Básico', B1: 'Intermedio', B2: 'Avanzado' };
+
+const ERR = {
+  rate_limited: 'Hiciste muchas solicitudes seguidas. Esperá un momento y probá de nuevo.',
+  session_token_cap: 'Esta llamada llegó a su límite de uso.',
+  llm_unavailable: 'El servicio de IA no está disponible ahora. Intentá de nuevo en unos segundos.',
+  llm_bad_output: 'La IA dio una respuesta que no se pudo leer. Intentá de nuevo.',
+  not_enough_speech: 'Hablaste muy poco en esta llamada. Necesitás al menos dos respuestas en inglés para recibir retroalimentación.',
+  network: 'No hay conexión con el servidor. Revisá tu internet.',
+  call_over: 'La llamada ya terminó.',
+  invalid_request: 'Algo salió mal con la solicitud. Intentá de nuevo.',
+};
+function errMsg(e) {
+  if (e.code === 'rate_limited' && e.retryAfter) return 'Hiciste muchas solicitudes seguidas. Probá de nuevo en ' + e.retryAfter + ' segundos.';
+  return ERR[e.code] || 'Ocurrió un error inesperado. Intentá de nuevo.';
+}
+
+async function api(path, body) {
+  let res;
+  try {
+    res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': deviceId() }, body: JSON.stringify(body) });
+  } catch { const e = new Error('network'); e.code = 'network'; throw e; }
+  let data = null;
+  try { data = await res.json(); } catch { /* non-JSON error body */ }
+  if (!res.ok) {
+    const e = new Error(data && data.error ? data.error.message : 'error');
+    e.code = (data && data.error && data.error.code) || 'unknown';
+    e.status = res.status; e.retryAfter = res.headers.get('Retry-After');
+    throw e;
+  }
+  return data;
+}
+
+let scenarioCache = null;
+async function getScenarios() {
+  if (scenarioCache) return scenarioCache;
+  const r = await fetch('/scenarios');
+  if (!r.ok) throw new Error('scenarios');
+  scenarioCache = (await r.json()).scenarios;
+  return scenarioCache;
+}
+
+function shell(inner, active) {
+  const tabs = [['scenarios', 'Llamadas', I.phone], ['progress', 'Progreso', I.chart], ['settings', 'Ajustes', I.gear]];
+  return '<main>' + inner + '</main><nav class="tabs" aria-label="Principal"><div class="tabs-in">' +
+    tabs.map((t) => '<a href="#/' + t[0] + '"' + (active === t[0] ? ' aria-current="page"' : '') + '>' + t[2] + '<span>' + t[1] + '</span></a>').join('') +
+    '</div></nav>';
+}
+function backHeader(title, href) {
+  return '<header class="top"><a class="icon-btn" href="' + href + '" aria-label="Volver">' + I.back + '</a><h1>' + esc(title) + '</h1></header>';
+}
+
+/* ---------- speech ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function pickVoice() {
+  if (!('speechSynthesis' in window)) return null;
+  const v = speechSynthesis.getVoices();
+  return v.find((x) => x.lang === 'en-US' && /google|natural|samantha|aria/i.test(x.name)) ||
+    v.find((x) => x.lang === 'en-US') || v.find((x) => /^en/i.test(x.lang)) || null;
+}
+function speak(text, rate) {
+  return new Promise((resolve) => {
+    if (!('speechSynthesis' in window)) return resolve();
+    let done = false;
+    const finish = () => { if (!done) { done = true; clearTimeout(timer); resolve(); } };
+    // Some Chrome versions never fire onend on long text; fall back to an estimate.
+    const timer = setTimeout(finish, 4000 + text.length * 95);
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'en-US'; u.rate = rate || 0.95;
+      const v = pickVoice(); if (v) u.voice = v;
+      u.onend = finish; u.onerror = finish;
+      speechSynthesis.speak(u);
+    } catch { finish(); }
+  });
+}
+function stopSpeech() { try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch { /* ignore */ } }
+
+/* ---------- router ---------- */
+let viewId = 0;
+let cleanup = () => {};
+
+function parseHash() {
+  const h = location.hash.replace(/^#\/?/, '');
+  const parts = h.split('?');
+  const seg = parts[0].split('/');
+  return { name: seg[0] || '', arg: seg[1] ? decodeURIComponent(seg[1]) : '', q: new URLSearchParams(parts[1] || '') };
+}
+
+function render() {
+  cleanup(); cleanup = () => {};
+  const vid = ++viewId;
+  const r = parseHash();
+  if (!store.get('profile', null) && r.name !== 'onboarding') { location.hash = '#/onboarding'; return; }
+  window.scrollTo(0, 0);
+  document.body.classList.toggle('in-call', r.name === 'call');
+  switch (r.name) {
+    case 'onboarding': return onboardingView();
+    case 'progress': return progressView();
+    case 'settings': return settingsView();
+    case 'pro': return proView(r.q.get('why'));
+    case 'feedback': return feedbackView(r.arg);
+    case 'call': return callView(r.arg, vid);
+    default: return scenariosView(vid);
+  }
+}
+window.addEventListener('hashchange', render);
+
+/* ---------- onboarding ---------- */
+function onboardingView() {
+  const prev = store.get('profile', {}) || {};
+  let goal = prev.goal || null, level = prev.level || null;
+  const goals = [
+    ['job', 'Conseguir empleo', 'Quiero prepararme para entrevistas y para mi primer trabajo en un call center.'],
+    ['improve', 'Mejorar en mi trabajo actual', 'Ya trabajo atendiendo llamadas y quiero hablar mejor inglés con los clientes.'],
+  ];
+  const levels = [
+    ['A2', 'Básico (A2)', 'Entiendo frases simples y puedo responder lo esencial.'],
+    ['B1', 'Intermedio (B1)', 'Mantengo una conversación sencilla, pero me cuesta cuando hablan rápido.'],
+    ['B2', 'Avanzado (B2)', 'Hablo con bastante fluidez, aunque todavía cometo errores.'],
+  ];
+  const choice = (g, k, t, d, attr) => '<button type="button" class="choice" data-' + attr + '="' + k + '" aria-pressed="' + (g === k) + '"><b>' + t + '</b><span>' + d + '</span></button>';
+  root().innerHTML = '<main><header class="top"><h1>Bienvenido a CallReady</h1></header>' +
+    '<p class="lead">Practicá llamadas de servicio al cliente en inglés con un cliente de IA y recibí retroalimentación en español.</p>' +
+    '<fieldset><legend>¿Cuál es tu objetivo?</legend>' + goals.map((x) => choice(goal, x[0], x[1], x[2], 'goal')).join('') + '</fieldset>' +
+    '<fieldset><legend>¿Cómo calificás tu inglés hoy?</legend>' + levels.map((x) => choice(level, x[0], x[1], x[2], 'level')).join('') + '</fieldset>' +
+    '<button class="btn primary block" id="go" disabled>Empezar</button></main>';
+  const go = $('#go');
+  const sync = () => { go.disabled = !(goal && level); };
+  const bind = (attr, set) => root().querySelectorAll('[data-' + attr + ']').forEach((b) => b.addEventListener('click', () => {
+    set(b.dataset[attr]);
+    root().querySelectorAll('[data-' + attr + ']').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+    sync();
+  }));
+  bind('goal', (v) => { goal = v; });
+  bind('level', (v) => { level = v; });
+  sync();
+  go.addEventListener('click', () => {
+    store.set('profile', { goal: goal, level: level, createdAt: new Date().toISOString() });
+    location.hash = '#/scenarios';
+  });
+}
+
+/* ---------- scenarios ---------- */
+async function scenariosView(vid) {
+  root().innerHTML = shell('<header class="top"><h1>Elegí una llamada</h1></header><p class="muted">Cargando…</p>', 'scenarios');
+  let list;
+  try { list = await getScenarios(); } catch {
+    if (vid !== viewId) return;
+    root().innerHTML = shell('<header class="top"><h1>Elegí una llamada</h1></header><div class="note err">No se pudieron cargar las llamadas. Revisá que el servidor esté activo.<br><button class="btn" id="retry">Reintentar</button></div>', 'scenarios');
+    $('#retry').addEventListener('click', () => scenariosView(vid));
+    return;
+  }
+  if (vid !== viewId) return;
+  const profile = store.get('profile', {});
+  const pro = isPro();
+  const today = callsToday(store.get('starts', []), new Date());
+  const counter = pro
+    ? '<div class="counter"><span>Pro activo</span><b>Llamadas ilimitadas</b></div>'
+    : '<div class="counter"><span>Llamadas gratis de hoy</span><b>' + Math.min(today, FREE_DAILY_LIMIT) + ' de ' + FREE_DAILY_LIMIT + '</b></div>';
+  const cards = sortScenarios(list, profile).map((s) => {
+    const locked = !pro && s.tier === 'pro';
+    return '<button class="sc' + (locked ? ' locked' : '') + '" data-id="' + esc(s.id) + '">' +
+      '<span class="lvl lvl-' + s.difficulty + '" title="' + LEVEL_NAMES[s.difficulty] + '">' + s.difficulty + '</span>' +
+      '<span class="sc-main"><b>' + esc(s.title.es) + '</b><span class="muted">' + esc(s.summaryEs) + '</span>' +
+      '<span class="who">' + esc(s.personaName) + '</span>' +
+      (s.difficulty === profile.level ? '<span class="fit">Para tu nivel</span>' : '') + '</span>' +
+      '<span class="sc-end">' + (locked ? I.lock + 'Pro' : '') + '</span></button>';
+  }).join('');
+  root().innerHTML = shell('<header class="top"><h1>Elegí una llamada</h1></header>' + counter + '<div id="msg" class="note" role="status" hidden></div>' + cards, 'scenarios');
+  root().querySelectorAll('.sc').forEach((b) => b.addEventListener('click', () => {
+    const s = list.find((x) => x.id === b.dataset.id);
+    const gate = canStartCall({ isPro: isPro(), scenario: s, startsToday: callsToday(store.get('starts', []), new Date()) });
+    if (gate.ok) { location.hash = '#/call/' + encodeURIComponent(s.id); return; }
+    if (gate.reason === 'pro_required') { location.hash = '#/pro?why=pro_required'; return; }
+    const m = $('#msg');
+    m.hidden = false;
+    m.innerHTML = 'Ya usaste tus ' + FREE_DAILY_LIMIT + ' llamadas gratis de hoy. Volvé mañana o conocé Pro para practicar sin límite.<br><a class="btn" href="#/pro?why=daily_limit" style="display:inline-block;margin-top:10px;text-decoration:none">Ver Pro</a>';
+    m.scrollIntoView({ block: 'nearest' });
+  }));
+}
+
+/* ---------- call ---------- */
+async function callView(id, vid) {
+  let list;
+  try { list = await getScenarios(); } catch {
+    if (vid !== viewId) return;
+    root().innerHTML = '<main>' + backHeader('Llamada', '#/scenarios') + '<div class="note err">No se pudo cargar la llamada. Revisá que el servidor esté activo.</div></main>';
+    return;
+  }
+  if (vid !== viewId) return;
+  const sc = list.find((s) => s.id === id);
+  if (!sc) { location.hash = '#/scenarios'; return; }
+  const gate = canStartCall({ isPro: isPro(), scenario: sc, startsToday: callsToday(store.get('starts', []), new Date()) });
+  if (!gate.ok) { location.hash = '#/pro?why=' + gate.reason; return; }
+
+  const sessionId = uuid();
+  const who = sc.aiRole === 'interviewer' ? 'El entrevistador' : 'El cliente';
+  const rate = sc.difficulty === 'A2' ? 0.85 : sc.difficulty === 'B1' ? 0.95 : 1;
+  const initials = sc.personaName.replace(/^(Mr|Mrs|Ms|Dr)\.\s*/i, '').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  const secure = window.isSecureContext;
+  const state = { history: [], busy: false, speaking: false, listening: false, ended: false, started: false, rec: null, startTs: Date.now() };
+
+  root().innerHTML =
+    '<section class="call" aria-label="Llamada con ' + esc(sc.personaName) + '">' +
+    '<div class="call-top"><button class="hang" id="hang">Colgar</button><div class="timer" id="timer" aria-label="Duración">00:00</div></div>' +
+    '<div class="caller"><div class="avatar" id="avatar" aria-hidden="true">' + esc(initials) + '</div>' +
+    '<div class="cname">' + esc(sc.personaName) + '</div><div class="cstatus" id="status" role="status" aria-live="polite">Conectando…</div></div>' +
+    '<div class="wave" id="wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>' +
+    '<div class="transcript" id="tr" aria-label="Transcripción"></div>' +
+    '<div id="notice" hidden></div><div id="hint"></div>' +
+    '<div class="bar"><button class="mic" id="mic" aria-label="Hablar" title="Hablar">' + I.mic + '</button>' +
+    '<input id="txt" type="text" maxlength="500" autocomplete="off" autocapitalize="sentences" placeholder="Escribí tu respuesta en inglés" aria-label="Tu respuesta en inglés">' +
+    '<button class="send" id="send">Enviar</button></div></section>';
+
+  const el = (s) => $(s);
+  const timer = setInterval(() => { const t = el('#timer'); if (t) t.textContent = formatTime((Date.now() - state.startTs) / 1000); }, 1000);
+  cleanup = () => {
+    state.ended = true; clearInterval(timer); stopSpeech();
+    try { if (state.rec) state.rec.abort(); } catch { /* ignore */ }
+  };
+
+  const agentTurns = () => state.history.filter((m) => m.role === 'agent').length;
+
+  function setStatus(text, mode) {
+    const s = el('#status'); if (s) s.textContent = text;
+    const a = el('#avatar'); if (a) a.classList.toggle('speaking', mode === 'speaking');
+    const w = el('#wave'); if (w) w.classList.toggle('on', mode === 'speaking' || mode === 'listening');
+  }
+  function updateUi() {
+    const mic = el('#mic'), txt = el('#txt'), send = el('#send');
+    if (!mic) return;
+    const blocked = state.busy || state.speaking || state.ended;
+    mic.disabled = blocked || !SR || !secure;
+    mic.classList.toggle('on', state.listening);
+    mic.setAttribute('aria-label', state.listening ? 'Detener' : 'Hablar');
+    txt.disabled = blocked; send.disabled = blocked;
+  }
+  function addBubble(kind, text) {
+    const tr = el('#tr'); if (!tr) return null;
+    const d = document.createElement('div');
+    d.className = 'b ' + kind; d.textContent = text;
+    tr.appendChild(d); tr.scrollTop = tr.scrollHeight;
+    return d;
+  }
+  function showNotice(msg, actions, isError) {
+    const n = el('#notice'); if (!n) return;
+    n.hidden = false;
+    n.innerHTML = '<div class="note' + (isError ? ' err' : '') + '" role="alert">' + esc(msg) +
+      (actions || []).map((a, i) => '<br><button class="btn" data-act="' + i + '">' + esc(a.label) + '</button>').join('') + '</div>';
+    (actions || []).forEach((a, i) => n.querySelector('[data-act="' + i + '"]').addEventListener('click', () => { hideNotice(); a.fn(); }));
+  }
+  function hideNotice() { const n = el('#notice'); if (n) { n.hidden = true; n.innerHTML = ''; } }
+
+  function hint() {
+    const msg = !SR ? 'Este navegador no permite reconocimiento de voz. Usá Chrome o Edge, o escribí tus respuestas abajo.'
+      : !secure ? 'El micrófono solo funciona en una página segura (HTTPS o localhost). Mientras tanto, escribí tus respuestas abajo.' : '';
+    const h = el('#hint');
+    if (h && msg) h.innerHTML = '<div class="note small">' + esc(msg) + '</div>';
+  }
+
+  async function requestTurn() {
+    state.busy = true; updateUi(); hideNotice();
+    setStatus(state.started ? who + ' está respondiendo…' : 'Conectando…');
+    try {
+      const data = await api('/session/turn', { sessionId: sessionId, scenarioId: sc.id, history: state.history });
+      if (state.ended) return;
+      state.history.push({ role: 'customer', text: data.line });
+      if (!state.started) {
+        state.started = true;
+        const starts = store.get('starts', []); starts.push(new Date().toISOString());
+        store.set('starts', starts.slice(-500));
+      }
+      addBubble('c', data.line);
+      state.busy = false; state.speaking = true; updateUi();
+      setStatus(who + ' está hablando…', 'speaking');
+      const skip = document.createElement('button');
+      skip.className = 'skip'; skip.textContent = 'Saltar audio';
+      skip.addEventListener('click', stopSpeech);
+      const st = el('.cstatus'); if (st) st.appendChild(skip);
+      await speak(data.line, rate);
+      skip.remove();
+      state.speaking = false;
+      if (state.ended) return;
+      if (data.callEnded) { await finishCall(); return; }
+      setStatus('Te toca. Tocá el micrófono o escribí.');
+      const t = el('#txt'); if (t && !state.busy) { updateUi(); t.focus({ preventScroll: true }); }
+    } catch (e) {
+      if (state.ended) return;
+      state.busy = false; state.speaking = false;
+      if (e.code === 'session_token_cap' && agentTurns() >= 2) { showNotice(errMsg(e)); await finishCall(); return; }
+      setStatus('Sin conexión con la llamada');
+      showNotice(errMsg(e), [{ label: 'Reintentar', fn: requestTurn }], true);
+    } finally {
+      if (!state.ended) { state.busy = false; updateUi(); }
+    }
+  }
+
+  async function sendAgent(raw) {
+    const text = String(raw || '').trim().slice(0, 500);
+    if (!text || state.busy || state.speaking || state.ended) return;
+    state.history.push({ role: 'agent', text: text });
+    addBubble('a', text);
+    const t = el('#txt'); if (t) t.value = '';
+    await requestTurn();
+  }
+
+  const MIC_ERR = {
+    'not-allowed': 'El navegador no tiene permiso para usar el micrófono. Permitilo desde el candado de la barra de direcciones, o escribí tu respuesta.',
+    'service-not-allowed': 'El navegador no tiene permiso para usar el micrófono. Permitilo desde el candado de la barra de direcciones, o escribí tu respuesta.',
+    'no-speech': 'No te escuché. Probá de nuevo o escribí tu respuesta.',
+    'audio-capture': 'No se encontró un micrófono.',
+    'network': 'El reconocimiento de voz necesita internet. Escribí tu respuesta mientras tanto.',
+    'language-not-supported': 'Este navegador no reconoce inglés por voz. Escribí tu respuesta.',
+  };
+
+  function startMic() {
+    if (!SR || !secure || state.busy || state.speaking || state.ended) return;
+    hideNotice();
+    const r = new SR();
+    r.lang = 'en-US'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+    let finalText = '', lastErr = null, live = null;
+    r.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) finalText += res[0].transcript + ' '; else interim += res[0].transcript;
+      }
+      const shown = (finalText + interim).trim();
+      if (!live) live = addBubble('live', shown); else { live.textContent = shown; const tr = el('#tr'); if (tr) tr.scrollTop = tr.scrollHeight; }
+    };
+    r.onerror = (e) => { lastErr = e.error; };
+    r.onend = () => {
+      state.listening = false; state.rec = null;
+      if (live) live.remove();
+      if (state.ended) return;
+      setStatus('Te toca. Tocá el micrófono o escribí.'); updateUi();
+      const text = finalText.trim();
+      if (text) {
+        if (autoSend()) sendAgent(text); else { const t = el('#txt'); t.value = text; t.focus(); }
+      } else if (lastErr && lastErr !== 'aborted') {
+        showNotice(MIC_ERR[lastErr] || 'No se pudo usar el micrófono. Escribí tu respuesta.');
+      } else if (!lastErr) {
+        showNotice(MIC_ERR['no-speech']);
+      }
+    };
+    try { r.start(); } catch { showNotice('No se pudo iniciar el micrófono. Escribí tu respuesta.'); return; }
+    state.rec = r; state.listening = true; updateUi(); setStatus('Escuchando… hablá en inglés', 'listening');
+  }
+  function stopMic() { try { if (state.rec) state.rec.stop(); } catch { /* ignore */ } }
+
+  function overlay(html, actions) {
+    const c = el('.call'); if (!c) return;
+    let o = el('.overlay'); if (!o) { o = document.createElement('div'); o.className = 'overlay'; c.appendChild(o); }
+    o.innerHTML = html;
+    (actions || []).forEach((a, i) => { const b = document.createElement('button'); b.className = 'btn' + (i === 0 ? ' primary' : ''); b.textContent = a.label; b.addEventListener('click', a.fn); o.appendChild(b); });
+  }
+
+  async function finishCall() {
+    state.ended = true; clearInterval(timer); stopSpeech(); stopMic();
+    if (agentTurns() < 2) { location.hash = '#/scenarios'; return; }
+    await generateFeedback();
+  }
+  async function generateFeedback() {
+    overlay('<div class="spinner" aria-hidden="true"></div><p>Preparando tu retroalimentación…</p>');
+    try {
+      const fb = await api('/session/feedback', { sessionId: sessionId, scenarioId: sc.id, history: state.history });
+      const feedback = { scores: fb.scores, corrections: fb.corrections, phrases: fb.phrases, overallSummaryEs: fb.overallSummaryEs };
+      const call = {
+        id: uuid(), sessionId: sessionId, scenarioId: sc.id, scenarioTitle: sc.title.es, difficulty: sc.difficulty,
+        startedAt: new Date(state.startTs).toISOString(), durationSec: Math.round((Date.now() - state.startTs) / 1000),
+        transcript: state.history, feedback: feedback, avg: avgScores(fb.scores),
+      };
+      const calls = store.get('calls', []); calls.push(call);
+      store.set('calls', calls.slice(-100));
+      location.hash = '#/feedback/' + call.id;
+    } catch (e) {
+      const actions = e.code === 'not_enough_speech' || e.code === 'session_token_cap'
+        ? [{ label: 'Volver a las llamadas', fn: () => { location.hash = '#/scenarios'; } }]
+        : [{ label: 'Reintentar', fn: generateFeedback }, { label: 'Salir sin guardar', fn: () => { location.hash = '#/scenarios'; } }];
+      overlay('<p>' + esc(errMsg(e)) + '</p>', actions);
+    }
+  }
+
+  el('#mic').addEventListener('click', () => { if (state.listening) stopMic(); else startMic(); });
+  el('#send').addEventListener('click', () => sendAgent(el('#txt').value));
+  el('#txt').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendAgent(el('#txt').value); } });
+  el('#hang').addEventListener('click', () => {
+    if (state.ended) return;
+    if (agentTurns() < 2) {
+      if (confirm('Todavía no hay suficiente conversación para dar retroalimentación. ¿Salir de la llamada?')) { cleanup(); location.hash = '#/scenarios'; }
+      return;
+    }
+    if (confirm('¿Colgar y ver tu retroalimentación?')) finishCall();
+  });
+
+  hint(); updateUi();
+  requestTurn();
+}
+
+/* ---------- feedback ---------- */
+function feedbackView(callId) {
+  const call = store.get('calls', []).find((c) => c.id === callId);
+  if (!call) {
+    root().innerHTML = '<main>' + backHeader('Retroalimentación', '#/progress') + '<div class="empty"><p>No encontramos esta llamada.</p><a class="btn primary" href="#/scenarios" style="display:inline-block;text-decoration:none">Ir a las llamadas</a></div></main>';
+    return;
+  }
+  const f = call.feedback;
+  const scoreRows = SCORE_KEYS.map((k) => {
+    const v = f.scores[k];
+    return '<div class="score"><span>' + SCORE_LABELS[k] + '</span><div class="meter" aria-hidden="true"><i class="' + (v <= 4 ? 'lo' : v >= 8 ? 'hi' : '') + '" style="width:' + v * 10 + '%"></i></div><b>' + v + '</b></div>';
+  }).join('');
+  const fixes = f.corrections.map((c) =>
+    '<article class="fix"><div class="row said"><span class="tag">Dijiste</span><q>' + esc(c.said) + '</q></div>' +
+    '<div class="row better"><span class="tag">Mejor</span><q>' + esc(c.better) + '</q></div>' +
+    '<p class="why">' + esc(c.explanationEs) + '</p></article>').join('');
+  const phrases = f.phrases.map((p, i) =>
+    '<div class="phrase"><div><b>' + esc(p.phrase) + '</b><div>' + esc(p.meaningEs) + '</div><div class="muted small">' + esc(p.whenToUseEs) + '</div></div>' +
+    '<button class="btn" data-say="' + i + '" aria-label="Escuchar: ' + esc(p.phrase) + '">' + I.speaker + ' Escuchar</button></div>').join('');
+  root().innerHTML = '<main>' + backHeader(call.scenarioTitle, '#/scenarios') +
+    '<div class="avg"><span class="avg-n">' + call.avg.toFixed(1) + '</span><span class="muted">de 10 en promedio</span></div>' +
+    (f.overallSummaryEs ? '<p class="lead" style="margin-top:4px">' + esc(f.overallSummaryEs) + '</p>' : '') +
+    '<section class="block"><h2>Tus puntajes</h2><div class="scores">' + scoreRows + '</div></section>' +
+    '<section class="block"><h2>Las 3 correcciones más importantes</h2>' + fixes + '</section>' +
+    '<section class="block"><h2>Frases útiles para call center</h2>' + phrases + '</section>' +
+    '<div class="stack"><a class="btn primary block" style="text-align:center;text-decoration:none" href="#/call/' + encodeURIComponent(call.scenarioId) + '">Repetir llamada</a>' +
+    '<a class="btn block" style="text-align:center;text-decoration:none" href="#/scenarios">Volver a las llamadas</a></div></main>';
+  root().querySelectorAll('[data-say]').forEach((b) => b.addEventListener('click', () => speak(f.phrases[Number(b.dataset.say)].phrase, 0.9)));
+  cleanup = stopSpeech;
+}
+
+/* ---------- progress ---------- */
+function trendSvg(vals) {
+  const W = 320, H = 150, px = 28, py = 22, n = vals.length;
+  const x = (i) => (n === 1 ? W / 2 : px + i * (W - 2 * px) / (n - 1));
+  const y = (v) => H - py - (v - 1) / 9 * (H - 2 * py);
+  const grid = [1, 5, 10].map((g) => '<line x1="' + px + '" x2="' + (W - 8) + '" y1="' + y(g) + '" y2="' + y(g) + '" stroke="#D8E0E8" stroke-width="1"/><text x="' + (px - 8) + '" y="' + (y(g) + 4) + '" text-anchor="end" font-size="11" fill="#566779">' + g + '</text>').join('');
+  const pts = vals.map((v, i) => x(i) + ',' + y(v)).join(' ');
+  const dots = vals.map((v, i) => '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="4" fill="#1556C0"/>').join('');
+  const last = vals[n - 1];
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Puntaje promedio por llamada. Último: ' + last.toFixed(1) + ' de 10.">' + grid +
+    (n > 1 ? '<polyline points="' + pts + '" fill="none" stroke="#1556C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>' : '') + dots +
+    '<text x="' + Math.min(x(n - 1), W - 16) + '" y="' + (y(last) - 10) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#0F2438">' + last.toFixed(1) + '</text></svg>';
+}
+
+function progressView() {
+  const calls = store.get('calls', []);
+  const keys = calls.map((c) => dateKey(new Date(c.startedAt)));
+  const streak = computeStreak(keys, new Date());
+  const fmt = new Intl.DateTimeFormat('es-HN', { day: 'numeric', month: 'short' });
+  const unit = (n) => (n === 1 ? 'día' : 'días');
+  let body;
+  if (!calls.length) {
+    body = '<div class="empty"><p><b>Todavía no hiciste ninguna llamada.</b></p><p class="muted">Tu historial y tu racha aparecerán aquí después de tu primera práctica.</p><a class="btn primary" href="#/scenarios" style="display:inline-block;text-decoration:none">Hacer una llamada</a></div>';
+  } else {
+    const pts = trendPoints(calls, 20);
+    const hist = calls.slice().reverse().map((c) =>
+      '<a class="hist" href="#/feedback/' + c.id + '" style="color:inherit;text-decoration:none"><span><b>' + esc(c.scenarioTitle) + '</b><br><span class="muted small">' +
+      fmt.format(new Date(c.startedAt)) + ', ' + formatTime(c.durationSec) + ' min, nivel ' + c.difficulty + '</span></span><span class="sc-n">' + c.avg.toFixed(1) + '</span></a>').join('');
+    body = '<section class="block"><h2>Tendencia</h2><div class="chart">' + trendSvg(pts) + '</div>' +
+      (pts.length < 2 ? '<p class="muted small" style="margin-top:8px">Hacé otra llamada para ver cómo cambia tu puntaje.</p>' : '') + '</section>' +
+      '<section class="block"><h2>Historial</h2>' + hist + '</section>';
+  }
+  root().innerHTML = shell('<header class="top"><h1>Tu progreso</h1></header>' +
+    '<div class="stats"><div class="stat"><b>' + streak.current + '</b><span>' + 'Racha actual (' + unit(streak.current) + ')</span></div>' +
+    '<div class="stat"><b>' + streak.best + '</b><span>Mejor racha (' + unit(streak.best) + ')</span></div>' +
+    '<div class="stat"><b>' + calls.length + '</b><span>Llamadas</span></div></div>' + body, 'progress');
+}
+
+/* ---------- settings / pro ---------- */
+function settingsView() {
+  root().innerHTML = shell('<header class="top"><h1>Ajustes</h1></header>' +
+    '<section class="block" style="margin-top:6px"><h2>Práctica</h2>' +
+    '<label class="row-set"><span>Enviar al terminar de hablar<small>Si lo apagás, revisás tu texto antes de enviarlo.</small></span><input class="sw" type="checkbox" id="auto" role="switch"' + (autoSend() ? ' checked' : '') + '></label>' +
+    '<a class="row-set" href="#/onboarding" style="color:inherit;text-decoration:none"><span>Cambiar objetivo y nivel<small>Reordena las llamadas según tu nivel.</small></span></a></section>' +
+    '<section class="block"><h2>Opciones de desarrollo</h2>' +
+    '<label class="row-set"><span>Modo Pro (prueba)<small>Llamadas ilimitadas y escenarios B2 y de entrevista. Solo para el piloto.</small></span><input class="sw" type="checkbox" id="pro" role="switch"' + (isPro() ? ' checked' : '') + '></label>' +
+    '<button class="row-set danger" id="reset" style="width:100%;text-align:left"><span>Borrar mi historial<small>Elimina tus llamadas, tu racha y tu perfil de este dispositivo.</small></span></button>' +
+    '<p class="muted small">Identificador anónimo: ' + esc(deviceId().slice(0, 8)) + '</p></section>', 'settings');
+  $('#auto').addEventListener('change', (e) => store.set('autoSend', e.target.checked));
+  $('#pro').addEventListener('change', (e) => store.set('isPro', e.target.checked));
+  $('#reset').addEventListener('click', () => {
+    if (!confirm('¿Borrar todo tu historial en este dispositivo? No se puede deshacer.')) return;
+    store.set('calls', []); store.set('starts', []); store.set('profile', null);
+    location.hash = '#/onboarding';
+  });
+}
+
+function proView(why) {
+  const msg = why === 'pro_required' ? 'Esta llamada es parte de Pro.' : why === 'daily_limit' ? 'Ya usaste tus 2 llamadas gratis de hoy.' : '';
+  root().innerHTML = '<main>' + backHeader('CallReady Pro', '#/scenarios') +
+    (msg ? '<div class="note">' + esc(msg) + '</div>' : '') +
+    '<p class="lead">Practicá todo lo que necesités antes de tu próxima llamada o entrevista real.</p>' +
+    '<ul class="benefits"><li><b>Llamadas ilimitadas</b>Sin tope diario de práctica.</li>' +
+    '<li><b>Escenarios de nivel B2</b>Clientes que hablan rápido, usan modismos y se enojan de verdad.</li>' +
+    '<li><b>Entrevista de trabajo bilingüe</b>Una reclutadora de RR. HH. te hace las preguntas de un puesto de call center.</li></ul>' +
+    '<button class="btn primary block" disabled>Próximamente</button>' +
+    '<p class="muted small" style="margin-top:12px">Durante el piloto podés probar Pro desde Ajustes.</p></main>';
+}
+
+render();
+</script>
+</body>
+</html>

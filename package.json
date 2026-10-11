@@ -1,0 +1,12 @@
+{
+  "name": "callready",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["server"],
+  "scripts": {
+    "dev": "npm run dev -w server",
+    "start": "npm run build -w server && npm run start -w server",
+    "test": "npm test -w server",
+    "typecheck": "npm run typecheck -w server"
+  }
+}
