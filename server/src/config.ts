@@ -16,9 +16,29 @@ export interface Config {
   maxTurns: number;
   maxHistory: number;
   maxChars: number;
+  /** Other sites allowed to call the API from a browser (CORS), e.g. the GitHub Pages site. */
+  allowedOrigins: string[];
 }
 
 type Env = Record<string, string | undefined>;
+
+/** Comma-separated list of origins like "https://nesrey.github.io". No paths, no trailing slash. */
+function origins(env: Env): string[] {
+  const raw = (env.ALLOWED_ORIGINS ?? "").trim();
+  if (!raw) return [];
+  return raw.split(",").map((o) => o.trim()).filter(Boolean).map((o) => {
+    let u: URL;
+    try {
+      u = new URL(o);
+    } catch {
+      throw new Error(`ALLOWED_ORIGINS has an invalid entry "${o}"`);
+    }
+    if ((u.protocol !== "https:" && u.protocol !== "http:") || u.origin !== o.replace(/\/$/, "")) {
+      throw new Error(`ALLOWED_ORIGINS entries must look like https://example.com (got "${o}")`);
+    }
+    return u.origin;
+  });
+}
 
 function int(env: Env, key: string, def: number, min = 1): number {
   const raw = env[key];
@@ -64,5 +84,6 @@ export function loadConfig(env: Env): Config {
     maxTurns,
     maxHistory: 24,
     maxChars: 500,
+    allowedOrigins: origins(env),
   };
 }

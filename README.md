@@ -44,6 +44,7 @@ sent to the browser. The server refuses to start without it.
 | `RATE_TURN_MAX` / `RATE_TURN_WINDOW_SEC` | `40` / `600` | Turn requests per device per window |
 | `RATE_FEEDBACK_MAX` / `RATE_FEEDBACK_WINDOW_SEC` | `6` / `600` | Feedback requests per device per window |
 | `MIN_TURNS` / `MAX_TURNS` | `6` / `10` | Call length in customer turns |
+| `ALLOWED_ORIGINS` | (empty) | Other sites allowed to call the API from a browser, e.g. `https://nesrey.github.io` |
 
 ## 2. Run
 
@@ -55,7 +56,25 @@ npm start        # builds, then runs compiled code
 
 Open **http://localhost:3000** in Chrome or Edge.
 
-## 3. Voice: what works where
+## 3. Online: GitHub Pages + Render
+
+The live pilot runs in two pieces:
+
+- **Page:** GitHub Pages serves the repo root. `index.html` at the root redirects to `web/`, so
+  https://nesrey.github.io/CallReadyHN/ opens the app.
+- **Server:** a Render web service (free plan) built from this repo:
+  - Build command: `npm install --include=dev && npm run build -w server`
+  - Start command: `npm run start -w server`
+  - Health check path: `/health`
+  - Environment: `ANTHROPIC_API_KEY`, `HOST=0.0.0.0`, `ALLOWED_ORIGINS=https://nesrey.github.io` (Render sets `PORT`)
+
+When the page is on `*.github.io` it sends API calls to the address in `API_BASE` near the top of the script in
+`web/index.html`; everywhere else (local server) it uses its own site. Pushing to `main` redeploys both.
+
+The free Render plan sleeps after 15 minutes without traffic; the first request after that takes up to a minute
+(the page says so while it waits). Anyone with the link can run calls on your API credits, within the limits above.
+
+## 4. Voice: what works where
 
 - **Chrome and Edge** (desktop and Android) support speech recognition. Firefox does not; Safari is unreliable.
   Without recognition the page still works: the text box is always visible.
@@ -80,10 +99,10 @@ Open the `https://…` address it prints on the phone. The page and API share on
 Anyone with the link can use the app (and spend your API credits, within the limits above), so share it only with
 pilot testers and stop the tunnel when you are done.
 
-## 4. Tests
+## 5. Tests
 
 ```bash
-npm test          # 69 tests: scenarios, parsing/retry, limits, handlers, prompts, web logic
+npm test          # 74 tests: scenarios, parsing/retry, limits, handlers, prompts, CORS, web logic
 npm run typecheck
 ```
 
@@ -91,7 +110,7 @@ Tests use Node's built-in runner and a mocked model, so they need no API key and
 The web app's pure logic (streak, daily limit, scoring, sorting) sits between `LOGIC:START` and `LOGIC:END`
 markers in `index.html`, and `web-logic.test.ts` loads it from there.
 
-## 5. API
+## 6. API
 
 All `/session/*` calls need an `X-Device-Id: <uuid>` header (the page generates and stores one; no login).
 Errors look like `{ "error": { "code": "…", "message": "…" } }`.
@@ -108,7 +127,7 @@ Model output must be valid JSON; if it is not, the server retries once with the 
 `502 llm_bad_output`. Error codes: `invalid_request`, `unknown_scenario`, `call_over`, `rate_limited`,
 `session_token_cap`, `not_enough_speech`, `llm_unavailable`, `llm_bad_output`.
 
-## 6. Adding scenarios
+## 7. Adding scenarios
 
 Append an object to `server/data/scenarios.json` and restart. The server validates every scenario at startup and
 fails with a clear message on unknown fields, duplicate ids, or missing data. Required: `id`, `title {es,en}`,
@@ -116,13 +135,13 @@ fails with a clear message on unknown fields, duplicate ids, or missing data. Re
 `expectedFlow` (3+ stages). Optional: `tier` (defaults to `pro` for B2 and interviews), `aiRole`
 (`customer|interviewer`), `difficultyNotes`. The grader scores call-flow compliance against `expectedFlow`.
 
-## 7. Free vs Pro (stub)
+## 8. Free vs Pro (stub)
 
 Free: 2 calls per day, A2/B1 scenarios. Pro: unlimited calls, B2 and interview scenarios. There is no payment;
 `isPro` is one flag in `localStorage`, toggled in **Ajustes → Opciones de desarrollo**. The daily limit is enforced
 in the browser only, so a user can bypass it by clearing site data. That is fine for a pilot, not for launch.
 
-## 8. Known pilot limitations
+## 9. Known pilot limitations
 
 - Device id is a random UUID in `localStorage`; it is spoofable. Rate limits and token caps are in memory and reset
   when the server restarts.

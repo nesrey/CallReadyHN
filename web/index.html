@@ -270,6 +270,8 @@ function trendPoints(calls, n) {
 /* ---------- helpers ---------- */
 const $ = (s, el) => (el || document).querySelector(s);
 const root = () => $('#app');
+// Where the server is. Empty means this same site (local server). On GitHub Pages the page talks to the Render server.
+const API_BASE = location.hostname.endsWith('.github.io') ? 'https://callready.onrender.com' : '';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const store = {
@@ -327,7 +329,7 @@ function errMsg(e) {
 async function api(path, body) {
   let res;
   try {
-    res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': deviceId() }, body: JSON.stringify(body) });
+    res = await fetch(API_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': deviceId() }, body: JSON.stringify(body) });
   } catch { const e = new Error('network'); e.code = 'network'; throw e; }
   let data = null;
   try { data = await res.json(); } catch { /* non-JSON error body */ }
@@ -343,7 +345,7 @@ async function api(path, body) {
 let scenarioCache = null;
 async function getScenarios() {
   if (scenarioCache) return scenarioCache;
-  const r = await fetch('/scenarios');
+  const r = await fetch(API_BASE + '/scenarios');
   if (!r.ok) throw new Error('scenarios');
   scenarioCache = (await r.json()).scenarios;
   return scenarioCache;
@@ -453,14 +455,18 @@ function onboardingView() {
 
 /* ---------- scenarios ---------- */
 async function scenariosView(vid) {
-  root().innerHTML = shell('<header class="top"><h1>Elegí una llamada</h1></header><p class="muted">Cargando…</p>', 'scenarios');
+  root().innerHTML = shell('<header class="top"><h1>Elegí una llamada</h1></header><p class="muted" id="loading">Cargando…</p>', 'scenarios');
+  // The free Render server sleeps when idle and takes up to a minute to wake up.
+  const slow = setTimeout(() => { const el = $('#loading'); if (el) el.textContent = 'Despertando el servidor… La primera carga puede tardar hasta un minuto.'; }, 4000);
   let list;
   try { list = await getScenarios(); } catch {
+    clearTimeout(slow);
     if (vid !== viewId) return;
     root().innerHTML = shell('<header class="top"><h1>Elegí una llamada</h1></header><div class="note err">No se pudieron cargar las llamadas. Revisá que el servidor esté activo.<br><button class="btn" id="retry">Reintentar</button></div>', 'scenarios');
     $('#retry').addEventListener('click', () => scenariosView(vid));
     return;
   }
+  clearTimeout(slow);
   if (vid !== viewId) return;
   const profile = store.get('profile', {});
   const pro = isPro();

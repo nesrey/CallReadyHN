@@ -19,6 +19,25 @@ export function createApp(deps: Deps, opts: { webDir: string }) {
     next();
   });
 
+  // CORS for the page when it is hosted elsewhere (GitHub Pages). Same-origin use needs none of this.
+  const allowed = new Set(deps.config.allowedOrigins);
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = req.header("origin");
+    if (origin && allowed.has(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Expose-Headers", "Retry-After");
+      res.append("Vary", "Origin");
+      if (req.method === "OPTIONS") {
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Device-Id");
+        res.setHeader("Access-Control-Max-Age", "600");
+        res.status(204).end();
+        return;
+      }
+    }
+    next();
+  });
+
   const turnLimiter = new RateLimiter(deps.config.turnRate.max, deps.config.turnRate.windowMs);
   const feedbackLimiter = new RateLimiter(deps.config.feedbackRate.max, deps.config.feedbackRate.windowMs);
 
