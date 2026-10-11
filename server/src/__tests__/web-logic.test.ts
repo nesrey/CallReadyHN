@@ -9,7 +9,7 @@ assert.ok(block, "LOGIC markers not found in web/index.html");
 
 const L = new Function(
   `${block.slice(block.indexOf("*/") + 2)}
-   return { computeStreak, callsToday, canStartCall, avgScores, sortScenarios, formatTime, trendPoints, dateKey, FREE_DAILY_LIMIT };`,
+   return { computeStreak, canStartCall, avgScores, sortScenarios, formatTime, trendPoints, dateKey, freeUsedText };`,
 )() as Record<string, any>;
 
 const d = (s: string) => new Date(s); // local-time dates, e.g. "2026-10-11T12:00:00"
@@ -53,27 +53,25 @@ test("streak: gap in the middle keeps current from the latest run", () => {
   assert.deepEqual(L.computeStreak(keys, d("2026-10-11T09:00:00")), { current: 2, best: 3 });
 });
 
-test("callsToday counts only today's local-date starts", () => {
-  const starts = [
-    d("2026-10-10T23:30:00").toISOString(),
-    d("2026-10-11T00:10:00").toISOString(),
-    d("2026-10-11T18:00:00").toISOString(),
-  ];
-  assert.equal(L.callsToday(starts, d("2026-10-11T20:00:00")), 2);
-  assert.equal(L.callsToday(starts, d("2026-10-12T08:00:00")), 0); // day rollover resets
-});
-
-test("free users: 2 calls per day on free-tier scenarios", () => {
+test("free users: the daily limit from the server, free-tier scenarios only", () => {
   const free = { tier: "free" };
-  assert.deepEqual(L.canStartCall({ isPro: false, scenario: free, startsToday: 0 }), { ok: true, reason: null });
-  assert.deepEqual(L.canStartCall({ isPro: false, scenario: free, startsToday: 1 }), { ok: true, reason: null });
-  assert.deepEqual(L.canStartCall({ isPro: false, scenario: free, startsToday: 2 }), { ok: false, reason: "daily_limit" });
+  assert.deepEqual(L.canStartCall({ isPro: false, scenario: free, startsToday: 0, limit: 2 }), { ok: true, reason: null });
+  assert.deepEqual(L.canStartCall({ isPro: false, scenario: free, startsToday: 1, limit: 2 }), { ok: true, reason: null });
+  assert.deepEqual(L.canStartCall({ isPro: false, scenario: free, startsToday: 2, limit: 2 }), { ok: false, reason: "daily_limit" });
+  assert.deepEqual(L.canStartCall({ isPro: false, scenario: free, startsToday: 2, limit: 5 }), { ok: true, reason: null });
+  assert.deepEqual(L.canStartCall({ isPro: false, scenario: free, startsToday: 0, limit: 0 }), { ok: false, reason: "daily_limit" });
 });
 
 test("free users cannot start pro scenarios; pro users have no limits", () => {
   const pro = { tier: "pro" };
-  assert.deepEqual(L.canStartCall({ isPro: false, scenario: pro, startsToday: 0 }), { ok: false, reason: "pro_required" });
-  assert.equal(L.canStartCall({ isPro: true, scenario: pro, startsToday: 50 }).ok, true);
+  assert.deepEqual(L.canStartCall({ isPro: false, scenario: pro, startsToday: 0, limit: 2 }), { ok: false, reason: "pro_required" });
+  assert.equal(L.canStartCall({ isPro: true, scenario: pro, startsToday: 50, limit: 2 }).ok, true);
+});
+
+test("freeUsedText uses the right number and plural", () => {
+  assert.equal(L.freeUsedText(2), "Ya usó sus 2 llamadas gratis de hoy.");
+  assert.equal(L.freeUsedText(1), "Ya usó su llamada gratis de hoy.");
+  assert.equal(L.freeUsedText(0), "Hoy no hay llamadas gratis disponibles.");
 });
 
 test("avgScores averages the five scores to one decimal", () => {

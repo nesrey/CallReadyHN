@@ -33,6 +33,8 @@ export async function getMe(deps: Deps, user: AuthUser) {
     callsToday,
     freeDailyLimit: settings.freeDailyLimit,
     proInstructionsEs: settings.proInstructionsEs,
+    /** For showing dates (e.g. Pro end) in the same time zone the server counts days in. */
+    timeZone: deps.config.timeZone,
   };
 }
 

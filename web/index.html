@@ -172,6 +172,45 @@ input.sw:checked::after{transform:translateX(20px)}
 .benefits b{display:block}
 .danger{color:var(--bad);border-color:#E4B3B3}
 
+/* sign-in, forms */
+.field{display:grid;gap:6px;margin-bottom:14px}
+.field>label,.field>.lbl{font-weight:600;font-size:15px}
+.field small{color:var(--muted);font-size:13px}
+.in{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 14px;background:var(--card);min-height:48px}
+textarea.in{min-height:96px;resize:vertical;line-height:1.45}
+select.in{appearance:auto}
+.divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:14px;margin:20px 0}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.btn.google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%}
+.btn.link{border:0;background:none;padding:6px 0;min-height:0;color:var(--cobalt);text-decoration:underline;font-weight:600}
+.code-in{font-family:var(--display);font-size:24px;letter-spacing:.3em;text-align:center}
+.pre{white-space:pre-line}
+
+/* admin */
+body.wide #app{max-width:980px}
+.seg{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 18px}
+.seg a{padding:8px 14px;border-radius:99px;border:1px solid var(--line);background:var(--card);text-decoration:none;font-weight:600;font-size:15px}
+.seg a[aria-current=page]{background:var(--cobalt);border-color:var(--cobalt);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+.card b{overflow-wrap:anywhere}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:13px;font-weight:600;background:#E3E9F0;color:var(--ink)}
+.pill.pro{background:#FBEBC8;color:#7A4E00}
+.pill.off{background:#F3E1E1;color:#8A2E2E}
+.row-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.row-actions .btn{min-height:40px;padding:8px 14px}
+.row-actions .in{width:auto;min-height:40px;padding:6px 10px}
+.search{display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:12px}
+.tbl-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:14px}
+.tbl{width:100%;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums}
+.tbl th,.tbl td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl th{font-weight:600;color:var(--muted);font-size:14px}
+.tbl tr:last-child td{border-bottom:0}
+.stats.four{grid-template-columns:repeat(4,1fr)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.sc-row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+@media (max-width:560px){ .grid2{grid-template-columns:1fr} .stats.four{grid-template-columns:repeat(2,1fr)} }
+
 @media (prefers-reduced-motion:reduce){
   .wave.on span{animation:none;height:18px}
   .mic.on::after{animation:none;opacity:.6}
@@ -183,10 +222,10 @@ input.sw:checked::after{transform:translateX(20px)}
 <body>
 <div id="app"><noscript>CallReady necesita JavaScript.</noscript></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
 <script>
 /* LOGIC:START — pure functions, unit-tested from server/src/__tests__/web-logic.test.ts */
 const LEVELS = ['A2', 'B1', 'B2'];
-const FREE_DAILY_LIMIT = 2;
 const SCORE_KEYS = ['fluency', 'grammar', 'vocabulary', 'empathyPoliteness', 'callFlow'];
 
 function dateKey(d) {
@@ -222,16 +261,12 @@ function computeStreak(dateKeys, today) {
   return { current: current, best: best };
 }
 
-function callsToday(starts, now) {
-  const k = dateKey(now);
-  return starts.filter(function (s) { return dateKey(new Date(s)) === k; }).length;
-}
-
-// Free: 2 calls per day, free-tier scenarios only. Pro: no limits.
+// Mirrors the server's rule so the page can explain a refusal before trying. The server has the final word.
+// Free: `limit` calls per day, free-tier scenarios only. Pro: no limits.
 function canStartCall(o) {
   if (o.isPro) return { ok: true, reason: null };
   if (o.scenario.tier === 'pro') return { ok: false, reason: 'pro_required' };
-  if (o.startsToday >= FREE_DAILY_LIMIT) return { ok: false, reason: 'daily_limit' };
+  if (o.startsToday >= o.limit) return { ok: false, reason: 'daily_limit' };
   return { ok: true, reason: null };
 }
 
@@ -265,6 +300,13 @@ function trendPoints(calls, n) {
     .slice(-(n || 20))
     .map(function (c) { return c.avg; });
 }
+
+// "Ya usó sus 2 llamadas gratis de hoy." with the right number and plural.
+function freeUsedText(limit) {
+  if (limit <= 0) return 'Hoy no hay llamadas gratis disponibles.';
+  if (limit === 1) return 'Ya usó su llamada gratis de hoy.';
+  return 'Ya usó sus ' + limit + ' llamadas gratis de hoy.';
+}
 /* LOGIC:END */
 
 /* ---------- helpers ---------- */
@@ -275,10 +317,12 @@ const root = () => $('#app');
 const API_BASE = /(^|\.)(callreadyhn\.com|github\.io)$/i.test(location.hostname) ? 'https://callreadyhn.onrender.com' : '';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// Only small per-browser preferences live here; account data lives on the server.
 const store = {
   get(k, f) { try { const v = localStorage.getItem('callready.' + k); return v === null ? f : JSON.parse(v); } catch { return f; } },
   set(k, v) { try { localStorage.setItem('callready.' + k, JSON.stringify(v)); } catch { /* storage full or blocked */ } },
 };
+const autoSend = () => store.get('autoSend', true) !== false;
 
 function uuid() {
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -287,14 +331,6 @@ function uuid() {
   const h = Array.from(b, (x) => x.toString(16).padStart(2, '0'));
   return [h.slice(0, 4).join(''), h.slice(4, 6).join(''), h.slice(6, 8).join(''), h.slice(8, 10).join(''), h.slice(10).join('')].join('-');
 }
-function deviceId() {
-  let id = store.get('deviceId', null);
-  if (!id) { id = uuid(); store.set('deviceId', id); }
-  return id;
-}
-
-const isPro = () => store.get('isPro', false) === true;
-const autoSend = () => store.get('autoSend', true) !== false;
 
 const I = {
   phone: '<svg class="i" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>',
@@ -304,6 +340,7 @@ const I = {
   back: '<svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
   mic: '<svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
   speaker: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg>',
+  google: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 0 1 0-4.4V7H2.1a11 11 0 0 0 0 10z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>',
 };
 
 const SCORE_LABELS = {
@@ -322,16 +359,37 @@ const ERR = {
   network: 'No hay conexión con el servidor. Revise su conexión a internet.',
   call_over: 'La llamada ya terminó.',
   invalid_request: 'Algo salió mal con la solicitud. Intente de nuevo.',
+  unauthorized: 'Su sesión venció. Inicie sesión de nuevo.',
+  pro_required: 'Esta llamada es parte de Pro.',
+  daily_limit: 'Ya no quedan llamadas gratis por hoy.',
+  not_found: 'No se encontró lo que buscaba.',
+  forbidden: 'No tiene permiso para ver esta página.',
 };
 function errMsg(e) {
   if (e.code === 'rate_limited' && e.retryAfter) return 'Se enviaron muchas solicitudes seguidas. Intente de nuevo en ' + e.retryAfter + ' segundos.';
   return ERR[e.code] || 'Ocurrió un error inesperado. Intente de nuevo.';
 }
 
-async function api(path, body) {
+/* ---------- account state ---------- */
+let sb = null;        // Supabase client (sign-in only; data goes through our server)
+let session = null;   // current Supabase session, or null
+let me = null;        // GET /me
+const callCache = {}; // feedback just generated, so the feedback page does not refetch it
+
+async function authHeader() {
+  if (!sb) return {};
+  const { data } = await sb.auth.getSession();
+  const t = data && data.session && data.session.access_token;
+  return t ? { Authorization: 'Bearer ' + t } : {};
+}
+
+async function api(path, body, method) {
+  const m = method || (body === undefined ? 'GET' : 'POST');
+  const headers = await authHeader();
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res;
   try {
-    res = await fetch(API_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': deviceId() }, body: JSON.stringify(body) });
+    res = await fetch(API_BASE + path, { method: m, headers: headers, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch { const e = new Error('network'); e.code = 'network'; throw e; }
   let data = null;
   try { data = await res.json(); } catch { /* non-JSON error body */ }
@@ -339,9 +397,15 @@ async function api(path, body) {
     const e = new Error(data && data.error ? data.error.message : 'error');
     e.code = (data && data.error && data.error.code) || 'unknown';
     e.status = res.status; e.retryAfter = res.headers.get('Retry-After');
+    if (res.status === 401 && sb) { me = null; sb.auth.signOut().catch(() => {}); }
     throw e;
   }
   return data;
+}
+
+async function loadMe() {
+  me = await api('/me');
+  return me;
 }
 
 let scenarioCache = null;
@@ -353,6 +417,14 @@ async function getScenarios() {
   return scenarioCache;
 }
 
+function fmtDate(iso, withYear) {
+  const opts = { day: 'numeric', month: 'short', timeZone: (me && me.timeZone) || undefined };
+  if (withYear) opts.year = 'numeric';
+  return new Intl.DateTimeFormat('es-HN', opts).format(new Date(iso));
+}
+// Pro ends at the start of the day after the chosen date; show the chosen date.
+const proEndText = (iso) => fmtDate(new Date(new Date(iso).getTime() - 1).toISOString(), true);
+
 function shell(inner, active) {
   const tabs = [['scenarios', 'Llamadas', I.phone], ['progress', 'Progreso', I.chart], ['settings', 'Ajustes', I.gear]];
   return '<main>' + inner + '</main><nav class="tabs" aria-label="Principal"><div class="tabs-in">' +
@@ -361,6 +433,20 @@ function shell(inner, active) {
 }
 function backHeader(title, href) {
   return '<header class="top"><a class="icon-btn" href="' + href + '" aria-label="Volver">' + I.back + '</a><h1>' + esc(title) + '</h1></header>';
+}
+function loadingView(title) {
+  return '<main>' + (title ? '<header class="top"><h1>' + esc(title) + '</h1></header>' : '') + '<p class="muted" id="loading" style="margin-top:22px">Cargando…</p></main>';
+}
+// The free Render server sleeps when idle and takes up to a minute to wake up.
+function slowNotice() {
+  const t = setTimeout(() => { const el = $('#loading'); if (el) el.textContent = 'Despertando el servidor… La primera carga puede tardar hasta un minuto.'; }, 4000);
+  return () => clearTimeout(t);
+}
+function errorView(title, e, retry) {
+  root().innerHTML = '<main>' + (title ? '<header class="top"><h1>' + esc(title) + '</h1></header>' : '') +
+    '<div class="note err">' + esc(e && e.code ? errMsg(e) : 'No se pudo conectar con el servidor. Verifique su conexión e intente de nuevo.') +
+    '<br><button class="btn" id="retry">Reintentar</button></div></main>';
+  $('#retry').addEventListener('click', retry);
 }
 
 /* ---------- speech ---------- */
@@ -397,33 +483,129 @@ let cleanup = () => {};
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
   const parts = h.split('?');
-  const seg = parts[0].split('/');
-  return { name: seg[0] || '', arg: seg[1] ? decodeURIComponent(seg[1]) : '', q: new URLSearchParams(parts[1] || '') };
+  const seg = parts[0].split('/').map((x) => decodeURIComponent(x));
+  return { name: seg[0] || '', arg: seg[1] || '', arg2: seg[2] || '', q: new URLSearchParams(parts[1] || '') };
 }
 
-function render() {
+async function render() {
   cleanup(); cleanup = () => {};
   const vid = ++viewId;
   const r = parseHash();
-  if (!store.get('profile', null) && r.name !== 'onboarding') { location.hash = '#/onboarding'; return; }
   window.scrollTo(0, 0);
   document.body.classList.toggle('in-call', r.name === 'call');
+  document.body.classList.toggle('wide', r.name === 'admin');
+
+  if (!session) {
+    if (r.name !== 'login') { location.hash = '#/login'; return; }
+    return loginView(vid);
+  }
+  if (r.name === 'login') { location.hash = '#/scenarios'; return; }
+  if (!me) {
+    root().innerHTML = loadingView();
+    const stop = slowNotice();
+    try { await loadMe(); } catch (e) { stop(); if (vid === viewId && session) errorView('CallReady', e, render); return; }
+    stop();
+    if (vid !== viewId) return;
+  }
+  if (!me.goal && r.name !== 'onboarding') { location.hash = '#/onboarding'; return; }
   switch (r.name) {
     case 'onboarding': return onboardingView();
-    case 'progress': return progressView();
+    case 'progress': return progressView(vid);
     case 'settings': return settingsView();
     case 'pro': return proView(r.q.get('why'));
-    case 'feedback': return feedbackView(r.arg);
+    case 'feedback': return feedbackView(r.arg, vid);
     case 'call': return callView(r.arg, vid);
+    case 'admin': return adminView(r.arg || 'users', r.arg2, vid);
     default: return scenariosView(vid);
   }
 }
-window.addEventListener('hashchange', render);
+
+/* ---------- sign-in ---------- */
+let loginNotice = '';
+
+function authErrText(error) {
+  const msg = String((error && error.message) || '').toLowerCase();
+  if ((error && error.status === 429) || /rate limit|too many|seconds/.test(msg)) return 'Se pidieron demasiados códigos. Espere un minuto e intente de nuevo.';
+  if (/expired|invalid|otp|token/.test(msg)) return 'El código no es correcto o ya venció. Revise el correo o pida uno nuevo.';
+  return 'No se pudo iniciar sesión. Intente de nuevo.';
+}
+
+function loginView() {
+  const appUrl = location.origin + location.pathname;
+  let email = '';
+  root().innerHTML = '<main><header class="top"><h1>Iniciar sesión</h1></header>' +
+    '<p class="lead">Practique llamadas de servicio al cliente en inglés con un cliente de IA y reciba retroalimentación en español.</p>' +
+    (loginNotice ? '<div class="note err" role="alert">' + esc(loginNotice) + '</div>' : '') +
+    '<button class="btn google" id="google">' + I.google + 'Continuar con Google</button>' +
+    '<div class="divider">o con su correo</div>' +
+    '<div id="step"></div>' +
+    '<p class="muted small" style="margin-top:18px">Si todavía no tiene una cuenta, se crea al entrar.</p></main>';
+  loginNotice = '';
+
+  $('#google').addEventListener('click', async () => {
+    const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: appUrl } });
+    if (error) showStepError(authErrText(error));
+  });
+
+  function showStepError(text) {
+    const n = $('#step-err'); if (!n) return;
+    n.hidden = !text; n.textContent = text || '';
+  }
+
+  function emailStep() {
+    $('#step').innerHTML = '<form id="f-email" novalidate><div class="field"><label for="email">Correo electrónico</label>' +
+      '<input class="in" id="email" type="email" autocomplete="email" inputmode="email" required value="' + esc(email) + '"></div>' +
+      '<div class="note err" id="step-err" role="alert" hidden></div>' +
+      '<button class="btn primary block" id="send-code">Enviar código</button></form>';
+    $('#f-email').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      email = $('#email').value.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showStepError('Escriba un correo válido.'); return; }
+      const b = $('#send-code'); b.disabled = true; b.textContent = 'Enviando…';
+      const { error } = await sb.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true, emailRedirectTo: appUrl } });
+      if (error) { b.disabled = false; b.textContent = 'Enviar código'; showStepError(authErrText(error)); return; }
+      codeStep();
+    });
+  }
+
+  function codeStep() {
+    $('#step').innerHTML = '<form id="f-code" novalidate><p style="margin-bottom:14px">Le enviamos un código de 6 dígitos a <b>' + esc(email) + '</b>. Si no lo ve, revise la carpeta de correo no deseado.</p>' +
+      '<div class="field"><label for="code">Código</label>' +
+      '<input class="in code-in" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required></div>' +
+      '<div class="note err" id="step-err" role="alert" hidden></div>' +
+      '<button class="btn primary block" id="verify">Entrar</button></form>' +
+      '<div class="row-actions"><button class="btn link" id="other">Usar otro correo</button><button class="btn link" id="resend" disabled>Reenviar código (60)</button></div>';
+    $('#code').focus();
+    let left = 60;
+    const timer = setInterval(() => {
+      const r = $('#resend'); if (!r) { clearInterval(timer); return; }
+      left--; r.textContent = left > 0 ? 'Reenviar código (' + left + ')' : 'Reenviar código'; r.disabled = left > 0;
+      if (left <= 0) clearInterval(timer);
+    }, 1000);
+    cleanup = () => clearInterval(timer);
+    $('#other').addEventListener('click', () => { clearInterval(timer); emailStep(); });
+    $('#resend').addEventListener('click', async () => {
+      const { error } = await sb.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true, emailRedirectTo: appUrl } });
+      showStepError(error ? authErrText(error) : '');
+      if (!error) { clearInterval(timer); codeStep(); }
+    });
+    $('#f-code').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const token = $('#code').value.replace(/\D/g, '');
+      if (token.length < 6) { showStepError('Escriba el código de 6 dígitos.'); return; }
+      const b = $('#verify'); b.disabled = true; b.textContent = 'Verificando…';
+      const { error } = await sb.auth.verifyOtp({ email: email, token: token, type: 'email' });
+      if (error) { b.disabled = false; b.textContent = 'Entrar'; showStepError(authErrText(error)); return; }
+      // onAuthStateChange moves on to the app.
+    });
+  }
+
+  emailStep();
+}
 
 /* ---------- onboarding ---------- */
 function onboardingView() {
-  const prev = store.get('profile', {}) || {};
-  let goal = prev.goal || null, level = prev.level || null;
+  let goal = me.goal || null, level = me.level || null;
   const goals = [
     ['job', 'Conseguir empleo', 'Quiero prepararme para entrevistas y para mi primer trabajo en un call center.'],
     ['improve', 'Mejorar en mi trabajo actual', 'Ya trabajo atendiendo llamadas y quiero hablar mejor inglés con los clientes.'],
@@ -433,12 +615,14 @@ function onboardingView() {
     ['B1', 'Intermedio (B1)', 'Mantengo una conversación sencilla, pero me cuesta cuando hablan rápido.'],
     ['B2', 'Avanzado (B2)', 'Hablo con bastante fluidez, aunque todavía cometo errores.'],
   ];
+  const first = !me.goal;
   const choice = (g, k, t, d, attr) => '<button type="button" class="choice" data-' + attr + '="' + k + '" aria-pressed="' + (g === k) + '"><b>' + t + '</b><span>' + d + '</span></button>';
-  root().innerHTML = '<main><header class="top"><h1>Le damos la bienvenida a CallReady</h1></header>' +
-    '<p class="lead">Practique llamadas de servicio al cliente en inglés con un cliente de IA y reciba retroalimentación en español.</p>' +
+  root().innerHTML = '<main>' + (first ? '<header class="top"><h1>Le damos la bienvenida a CallReady</h1></header>' : backHeader('Objetivo y nivel', '#/settings')) +
+    (first ? '<p class="lead">Practique llamadas de servicio al cliente en inglés con un cliente de IA y reciba retroalimentación en español.</p>' : '') +
     '<fieldset><legend>¿Cuál es su objetivo?</legend>' + goals.map((x) => choice(goal, x[0], x[1], x[2], 'goal')).join('') + '</fieldset>' +
     '<fieldset><legend>¿Cómo calificaría su inglés hoy?</legend>' + levels.map((x) => choice(level, x[0], x[1], x[2], 'level')).join('') + '</fieldset>' +
-    '<button class="btn primary block" id="go" disabled>Empezar</button></main>';
+    '<div class="note err" id="err" role="alert" hidden></div>' +
+    '<button class="btn primary block" id="go" disabled>' + (first ? 'Empezar' : 'Guardar') + '</button></main>';
   const go = $('#go');
   const sync = () => { go.disabled = !(goal && level); };
   const bind = (attr, set) => root().querySelectorAll('[data-' + attr + ']').forEach((b) => b.addEventListener('click', () => {
@@ -449,51 +633,53 @@ function onboardingView() {
   bind('goal', (v) => { goal = v; });
   bind('level', (v) => { level = v; });
   sync();
-  go.addEventListener('click', () => {
-    store.set('profile', { goal: goal, level: level, createdAt: new Date().toISOString() });
-    location.hash = '#/scenarios';
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    try {
+      me = await api('/me', { goal: goal, level: level }, 'PUT');
+      location.hash = '#/scenarios';
+    } catch (e) {
+      go.disabled = false;
+      const n = $('#err'); n.hidden = false; n.textContent = errMsg(e);
+    }
   });
 }
 
 /* ---------- scenarios ---------- */
 async function scenariosView(vid) {
   root().innerHTML = shell('<header class="top"><h1>Elija una llamada</h1></header><p class="muted" id="loading">Cargando…</p>', 'scenarios');
-  // The free Render server sleeps when idle and takes up to a minute to wake up.
-  const slow = setTimeout(() => { const el = $('#loading'); if (el) el.textContent = 'Despertando el servidor… La primera carga puede tardar hasta un minuto.'; }, 4000);
+  const stop = slowNotice();
   let list;
-  try { list = await getScenarios(); } catch {
-    clearTimeout(slow);
+  try { [list] = await Promise.all([getScenarios(), loadMe()]); } catch (e) {
+    stop();
     if (vid !== viewId) return;
     root().innerHTML = shell('<header class="top"><h1>Elija una llamada</h1></header><div class="note err">No se pudieron cargar las llamadas. Verifique que el servidor esté activo.<br><button class="btn" id="retry">Reintentar</button></div>', 'scenarios');
     $('#retry').addEventListener('click', () => scenariosView(vid));
     return;
   }
-  clearTimeout(slow);
+  stop();
   if (vid !== viewId) return;
-  const profile = store.get('profile', {});
-  const pro = isPro();
-  const today = callsToday(store.get('starts', []), new Date());
-  const counter = pro
+  const counter = me.isPro
     ? '<div class="counter"><span>Pro activo</span><b>Llamadas ilimitadas</b></div>'
-    : '<div class="counter"><span>Llamadas gratis de hoy</span><b>' + Math.min(today, FREE_DAILY_LIMIT) + ' de ' + FREE_DAILY_LIMIT + '</b></div>';
-  const cards = sortScenarios(list, profile).map((s) => {
-    const locked = !pro && s.tier === 'pro';
+    : '<div class="counter"><span>Llamadas gratis de hoy</span><b>' + Math.min(me.callsToday, me.freeDailyLimit) + ' de ' + me.freeDailyLimit + '</b></div>';
+  const cards = sortScenarios(list, me).map((s) => {
+    const locked = !me.isPro && s.tier === 'pro';
     return '<button class="sc' + (locked ? ' locked' : '') + '" data-id="' + esc(s.id) + '">' +
       '<span class="lvl lvl-' + s.difficulty + '" title="' + LEVEL_NAMES[s.difficulty] + '">' + s.difficulty + '</span>' +
       '<span class="sc-main"><b>' + esc(s.title.es) + '</b><span class="muted">' + esc(s.summaryEs) + '</span>' +
       '<span class="who">' + esc(s.personaName) + '</span>' +
-      (s.difficulty === profile.level ? '<span class="fit">Para su nivel</span>' : '') + '</span>' +
+      (s.difficulty === me.level ? '<span class="fit">Para su nivel</span>' : '') + '</span>' +
       '<span class="sc-end">' + (locked ? I.lock + 'Pro' : '') + '</span></button>';
   }).join('');
   root().innerHTML = shell('<header class="top"><h1>Elija una llamada</h1></header>' + counter + '<div id="msg" class="note" role="status" hidden></div>' + cards, 'scenarios');
   root().querySelectorAll('.sc').forEach((b) => b.addEventListener('click', () => {
     const s = list.find((x) => x.id === b.dataset.id);
-    const gate = canStartCall({ isPro: isPro(), scenario: s, startsToday: callsToday(store.get('starts', []), new Date()) });
+    const gate = canStartCall({ isPro: me.isPro, scenario: s, startsToday: me.callsToday, limit: me.freeDailyLimit });
     if (gate.ok) { location.hash = '#/call/' + encodeURIComponent(s.id); return; }
     if (gate.reason === 'pro_required') { location.hash = '#/pro?why=pro_required'; return; }
     const m = $('#msg');
     m.hidden = false;
-    m.innerHTML = 'Ya usó sus ' + FREE_DAILY_LIMIT + ' llamadas gratis de hoy. Vuelva mañana o conozca Pro para practicar sin límite.<br><a class="btn" href="#/pro?why=daily_limit" style="display:inline-block;margin-top:10px;text-decoration:none">Ver Pro</a>';
+    m.innerHTML = esc(freeUsedText(me.freeDailyLimit)) + ' Vuelva mañana o conozca Pro para practicar sin límite.<br><a class="btn" href="#/pro?why=daily_limit" style="display:inline-block;margin-top:10px;text-decoration:none">Ver Pro</a>';
     m.scrollIntoView({ block: 'nearest' });
   }));
 }
@@ -509,7 +695,7 @@ async function callView(id, vid) {
   if (vid !== viewId) return;
   const sc = list.find((s) => s.id === id);
   if (!sc) { location.hash = '#/scenarios'; return; }
-  const gate = canStartCall({ isPro: isPro(), scenario: sc, startsToday: callsToday(store.get('starts', []), new Date()) });
+  const gate = canStartCall({ isPro: me.isPro, scenario: sc, startsToday: me.callsToday, limit: me.freeDailyLimit });
   if (!gate.ok) { location.hash = '#/pro?why=' + gate.reason; return; }
 
   const sessionId = uuid();
@@ -584,11 +770,7 @@ async function callView(id, vid) {
       const data = await api('/session/turn', { sessionId: sessionId, scenarioId: sc.id, history: state.history });
       if (state.ended) return;
       state.history.push({ role: 'customer', text: data.line });
-      if (!state.started) {
-        state.started = true;
-        const starts = store.get('starts', []); starts.push(new Date().toISOString());
-        store.set('starts', starts.slice(-500));
-      }
+      if (!state.started) { state.started = true; me.callsToday++; }
       addBubble('c', data.line);
       state.busy = false; state.speaking = true; updateUi();
       setStatus(who + ' está hablando…', 'speaking');
@@ -606,6 +788,8 @@ async function callView(id, vid) {
     } catch (e) {
       if (state.ended) return;
       state.busy = false; state.speaking = false;
+      if (e.code === 'pro_required' || e.code === 'daily_limit') { cleanup(); location.hash = '#/pro?why=' + e.code; return; }
+      if (e.code === 'unauthorized') { cleanup(); return; }
       if (e.code === 'session_token_cap' && agentTurns() >= 2) { showNotice(errMsg(e)); await finishCall(); return; }
       setStatus('Sin conexión con la llamada');
       showNotice(errMsg(e), [{ label: 'Reintentar', fn: requestTurn }], true);
@@ -684,16 +868,14 @@ async function callView(id, vid) {
     try {
       const fb = await api('/session/feedback', { sessionId: sessionId, scenarioId: sc.id, history: state.history });
       const feedback = { scores: fb.scores, corrections: fb.corrections, phrases: fb.phrases, overallSummaryEs: fb.overallSummaryEs };
-      const call = {
-        id: uuid(), sessionId: sessionId, scenarioId: sc.id, scenarioTitle: sc.title.es, difficulty: sc.difficulty,
+      callCache[fb.callId] = {
+        id: fb.callId, scenarioId: sc.id, titleEs: sc.title.es, difficulty: sc.difficulty,
         startedAt: new Date(state.startTs).toISOString(), durationSec: Math.round((Date.now() - state.startTs) / 1000),
-        transcript: state.history, feedback: feedback, avg: avgScores(fb.scores),
+        avg: avgScores(fb.scores), feedback: feedback,
       };
-      const calls = store.get('calls', []); calls.push(call);
-      store.set('calls', calls.slice(-100));
-      location.hash = '#/feedback/' + call.id;
+      location.hash = '#/feedback/' + fb.callId;
     } catch (e) {
-      const actions = e.code === 'not_enough_speech' || e.code === 'session_token_cap'
+      const actions = e.code === 'not_enough_speech' || e.code === 'session_token_cap' || e.code === 'not_found'
         ? [{ label: 'Volver a las llamadas', fn: () => { location.hash = '#/scenarios'; } }]
         : [{ label: 'Reintentar', fn: generateFeedback }, { label: 'Salir sin guardar', fn: () => { location.hash = '#/scenarios'; } }];
       overlay('<p>' + esc(errMsg(e)) + '</p>', actions);
@@ -717,11 +899,16 @@ async function callView(id, vid) {
 }
 
 /* ---------- feedback ---------- */
-function feedbackView(callId) {
-  const call = store.get('calls', []).find((c) => c.id === callId);
+async function feedbackView(callId, vid) {
+  let call = callCache[callId];
   if (!call) {
-    root().innerHTML = '<main>' + backHeader('Retroalimentación', '#/progress') + '<div class="empty"><p>No encontramos esta llamada.</p><a class="btn primary" href="#/scenarios" style="display:inline-block;text-decoration:none">Ir a las llamadas</a></div></main>';
-    return;
+    root().innerHTML = loadingView('Retroalimentación');
+    try { call = await api('/calls/' + encodeURIComponent(callId)); } catch (e) {
+      if (vid !== viewId) return;
+      root().innerHTML = '<main>' + backHeader('Retroalimentación', '#/progress') + '<div class="empty"><p>' + (e.code === 'not_found' ? 'No encontramos esta llamada.' : esc(errMsg(e))) + '</p><a class="btn primary" href="#/scenarios" style="display:inline-block;text-decoration:none">Ir a las llamadas</a></div></main>';
+      return;
+    }
+    if (vid !== viewId) return;
   }
   const f = call.feedback;
   const scoreRows = SCORE_KEYS.map((k) => {
@@ -735,8 +922,8 @@ function feedbackView(callId) {
   const phrases = f.phrases.map((p, i) =>
     '<div class="phrase"><div><b>' + esc(p.phrase) + '</b><div>' + esc(p.meaningEs) + '</div><div class="muted small">' + esc(p.whenToUseEs) + '</div></div>' +
     '<button class="btn" data-say="' + i + '" aria-label="Escuchar: ' + esc(p.phrase) + '">' + I.speaker + ' Escuchar</button></div>').join('');
-  root().innerHTML = '<main>' + backHeader(call.scenarioTitle, '#/scenarios') +
-    '<div class="avg"><span class="avg-n">' + call.avg.toFixed(1) + '</span><span class="muted">de 10 en promedio</span></div>' +
+  root().innerHTML = '<main>' + backHeader(call.titleEs, '#/scenarios') +
+    '<div class="avg"><span class="avg-n">' + Number(call.avg).toFixed(1) + '</span><span class="muted">de 10 en promedio</span></div>' +
     (f.overallSummaryEs ? '<p class="lead" style="margin-top:4px">' + esc(f.overallSummaryEs) + '</p>' : '') +
     '<section class="block"><h2>Sus puntajes</h2><div class="scores">' + scoreRows + '</div></section>' +
     '<section class="block"><h2>Las 3 correcciones más importantes</h2>' + fixes + '</section>' +
@@ -761,20 +948,27 @@ function trendSvg(vals) {
     '<text x="' + Math.min(x(n - 1), W - 16) + '" y="' + (y(last) - 10) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#0F2438">' + last.toFixed(1) + '</text></svg>';
 }
 
-function progressView() {
-  const calls = store.get('calls', []);
+async function progressView(vid) {
+  root().innerHTML = shell('<header class="top"><h1>Su progreso</h1></header><p class="muted" id="loading">Cargando…</p>', 'progress');
+  let calls;
+  try { calls = (await api('/calls')).calls; } catch (e) {
+    if (vid !== viewId) return;
+    root().innerHTML = shell('<header class="top"><h1>Su progreso</h1></header><div class="note err">' + esc(errMsg(e)) + '<br><button class="btn" id="retry">Reintentar</button></div>', 'progress');
+    $('#retry').addEventListener('click', () => progressView(vid));
+    return;
+  }
+  if (vid !== viewId) return;
   const keys = calls.map((c) => dateKey(new Date(c.startedAt)));
   const streak = computeStreak(keys, new Date());
-  const fmt = new Intl.DateTimeFormat('es-HN', { day: 'numeric', month: 'short' });
   const unit = (n) => (n === 1 ? 'día' : 'días');
   let body;
   if (!calls.length) {
     body = '<div class="empty"><p><b>Todavía no hay llamadas.</b></p><p class="muted">Su historial y su racha aparecerán aquí después de su primera práctica.</p><a class="btn primary" href="#/scenarios" style="display:inline-block;text-decoration:none">Hacer una llamada</a></div>';
   } else {
     const pts = trendPoints(calls, 20);
-    const hist = calls.slice().reverse().map((c) =>
-      '<a class="hist" href="#/feedback/' + c.id + '" style="color:inherit;text-decoration:none"><span><b>' + esc(c.scenarioTitle) + '</b><br><span class="muted small">' +
-      fmt.format(new Date(c.startedAt)) + ', ' + formatTime(c.durationSec) + ' min, nivel ' + c.difficulty + '</span></span><span class="sc-n">' + c.avg.toFixed(1) + '</span></a>').join('');
+    const hist = calls.map((c) =>
+      '<a class="hist" href="#/feedback/' + encodeURIComponent(c.id) + '" style="color:inherit;text-decoration:none"><span><b>' + esc(c.titleEs) + '</b><br><span class="muted small">' +
+      fmtDate(c.startedAt) + ', ' + formatTime(c.durationSec) + ' min, nivel ' + c.difficulty + '</span></span><span class="sc-n">' + Number(c.avg).toFixed(1) + '</span></a>').join('');
     body = '<section class="block"><h2>Tendencia</h2><div class="chart">' + trendSvg(pts) + '</div>' +
       (pts.length < 2 ? '<p class="muted small" style="margin-top:8px">Haga otra llamada para ver cómo cambia su puntaje.</p>' : '') + '</section>' +
       '<section class="block"><h2>Historial</h2>' + hist + '</section>';
@@ -786,37 +980,295 @@ function progressView() {
 }
 
 /* ---------- settings / pro ---------- */
+function planText() {
+  if (me.isPro) return me.proUntil ? 'Pro hasta el ' + proEndText(me.proUntil) : 'Pro';
+  return 'Gratis: ' + me.freeDailyLimit + (me.freeDailyLimit === 1 ? ' llamada' : ' llamadas') + ' por día';
+}
+
 function settingsView() {
   root().innerHTML = shell('<header class="top"><h1>Ajustes</h1></header>' +
-    '<section class="block" style="margin-top:6px"><h2>Práctica</h2>' +
+    '<section class="block" style="margin-top:6px"><h2>Cuenta</h2>' +
+    '<div class="row-set"><span>Correo<small>' + esc(me.email) + '</small></span></div>' +
+    '<a class="row-set" href="#/pro" style="color:inherit;text-decoration:none"><span>Plan<small>' + esc(planText()) + '</small></span></a>' +
+    (me.isAdmin ? '<a class="row-set" href="#/admin" style="color:inherit;text-decoration:none"><span>Administración<small>Usuarios, uso, escenarios y ajustes.</small></span></a>' : '') +
+    '<button class="row-set" id="signout" style="width:100%;text-align:left"><span>Cerrar sesión<small>Puede volver a entrar con el mismo correo.</small></span></button></section>' +
+    '<section class="block"><h2>Práctica</h2>' +
     '<label class="row-set"><span>Enviar al terminar de hablar<small>Si se desactiva, puede revisar el texto antes de enviarlo.</small></span><input class="sw" type="checkbox" id="auto" role="switch"' + (autoSend() ? ' checked' : '') + '></label>' +
-    '<a class="row-set" href="#/onboarding" style="color:inherit;text-decoration:none"><span>Cambiar objetivo y nivel<small>Reordena las llamadas según su nivel.</small></span></a></section>' +
-    '<section class="block"><h2>Opciones de desarrollo</h2>' +
-    '<label class="row-set"><span>Modo Pro (prueba)<small>Llamadas ilimitadas y escenarios B2 y de entrevista. Solo para el piloto.</small></span><input class="sw" type="checkbox" id="pro" role="switch"' + (isPro() ? ' checked' : '') + '></label>' +
-    '<button class="row-set danger" id="reset" style="width:100%;text-align:left"><span>Borrar mi historial<small>Elimina sus llamadas, su racha y su perfil de este dispositivo.</small></span></button>' +
-    '<p class="muted small">Identificador anónimo: ' + esc(deviceId().slice(0, 8)) + '</p></section>', 'settings');
+    '<a class="row-set" href="#/onboarding" style="color:inherit;text-decoration:none"><span>Cambiar objetivo y nivel<small>Reordena las llamadas según su nivel.</small></span></a></section>', 'settings');
   $('#auto').addEventListener('change', (e) => store.set('autoSend', e.target.checked));
-  $('#pro').addEventListener('change', (e) => store.set('isPro', e.target.checked));
-  $('#reset').addEventListener('click', () => {
-    if (!confirm('¿Borrar todo su historial en este dispositivo? No se puede deshacer.')) return;
-    store.set('calls', []); store.set('starts', []); store.set('profile', null);
-    location.hash = '#/onboarding';
+  $('#signout').addEventListener('click', async () => {
+    if (!confirm('¿Cerrar sesión en este dispositivo?')) return;
+    await sb.auth.signOut();
   });
 }
 
 function proView(why) {
-  const msg = why === 'pro_required' ? 'Esta llamada es parte de Pro.' : why === 'daily_limit' ? 'Ya usó sus 2 llamadas gratis de hoy.' : '';
+  const msg = why === 'pro_required' ? 'Esta llamada es parte de Pro.' : why === 'daily_limit' ? freeUsedText(me.freeDailyLimit) : '';
   root().innerHTML = '<main>' + backHeader('CallReady Pro', '#/scenarios') +
     (msg ? '<div class="note">' + esc(msg) + '</div>' : '') +
+    (me.isPro ? '<div class="note" style="background:#E1F3EA;border-color:#9FD3B8">Su plan Pro está activo' + (me.proUntil ? ' hasta el ' + esc(proEndText(me.proUntil)) : '') + '.</div>' : '') +
     '<p class="lead">Practique todo lo que necesite antes de su próxima llamada o entrevista real.</p>' +
     '<ul class="benefits"><li><b>Llamadas ilimitadas</b>Sin tope diario de práctica.</li>' +
     '<li><b>Escenarios de nivel B2</b>Clientes que hablan rápido, usan modismos y se enojan de verdad.</li>' +
     '<li><b>Entrevista de trabajo bilingüe</b>Una reclutadora de RR. HH. le hace las preguntas de un puesto de call center.</li></ul>' +
-    '<button class="btn primary block" disabled>Próximamente</button>' +
-    '<p class="muted small" style="margin-top:12px">Durante el piloto puede probar Pro desde Ajustes.</p></main>';
+    (me.isPro ? '' : '<section class="block"><h2>Cómo activar Pro</h2><div class="card pre">' + esc(me.proInstructionsEs) + '</div></section>') +
+    '</main>';
 }
 
-render();
+/* ---------- admin ---------- */
+const ADMIN_TABS = [['users', 'Usuarios'], ['usage', 'Uso'], ['scenarios', 'Escenarios'], ['settings', 'Ajustes']];
+
+function adminFrame(tab, inner) {
+  return '<main>' + backHeader('Administración', '#/settings') +
+    '<nav class="seg" aria-label="Secciones">' + ADMIN_TABS.map((t) => '<a href="#/admin/' + t[0] + '"' + (t[0] === tab ? ' aria-current="page"' : '') + '>' + t[1] + '</a>').join('') + '</nav>' +
+    inner + '</main>';
+}
+
+async function adminView(tab, arg, vid) {
+  if (!me.isAdmin) { location.hash = '#/scenarios'; return; }
+  const known = tab === 'scenario' ? 'scenarios' : tab;
+  root().innerHTML = adminFrame(known, '<p class="muted" id="loading">Cargando…</p>');
+  const fail = (e) => {
+    if (vid !== viewId) return;
+    root().innerHTML = adminFrame(known, '<div class="note err">' + esc(errMsg(e)) + '<br><button class="btn" id="retry">Reintentar</button></div>');
+    $('#retry').addEventListener('click', render);
+  };
+  try {
+    if (tab === 'usage') return await adminUsageView(vid);
+    if (tab === 'scenarios') return await adminScenariosView(vid);
+    if (tab === 'scenario') return await adminScenarioEdit(arg, vid);
+    if (tab === 'settings') return await adminSettingsView(vid);
+    return await adminUsersView(vid);
+  } catch (e) { fail(e); }
+}
+
+async function adminUsersView(vid) {
+  const params = parseHash().q;
+  const q = params.get('q') || '';
+  let users = [], total = 0;
+  const load = async (offset) => {
+    const r = await api('/admin/users?q=' + encodeURIComponent(q) + '&offset=' + offset);
+    users = users.concat(r.users); total = r.total;
+  };
+  await load(0);
+  if (vid !== viewId) return;
+  const today = new Date().toISOString().slice(0, 10);
+
+  function card(u) {
+    const status = u.proActive
+      ? '<span class="pill pro">' + (u.proUntil ? 'Pro hasta el ' + esc(proEndText(u.proUntil)) : 'Pro sin vencimiento') + '</span>'
+      : (u.isPro ? '<span class="pill off">Pro vencido</span>' : '<span class="pill">Gratis</span>');
+    return '<article class="card" data-user="' + esc(u.userId) + '"><b>' + esc(u.email) + '</b> ' + status +
+      '<div class="muted small" style="margin-top:4px">Alta: ' + fmtDate(u.createdAt, true) + ' · Última actividad: ' + fmtDate(u.lastSeenAt, true) + '</div>' +
+      '<div class="small">Llamadas: ' + u.calls + ' · Promedio: ' + (u.avgScore === null ? '—' : u.avgScore.toFixed(1)) + ' · Tokens: ' + u.tokens.toLocaleString('es-HN') + '</div>' +
+      '<div class="row-actions"><label class="small" for="d-' + esc(u.userId) + '">Pro hasta</label>' +
+      '<input class="in" type="date" id="d-' + esc(u.userId) + '" min="' + today + '" aria-describedby="h-' + esc(u.userId) + '">' +
+      '<button class="btn" data-pro="on">Dar Pro</button>' +
+      (u.isPro ? '<button class="btn danger" data-pro="off">Quitar Pro</button>' : '') +
+      '<span class="muted small" id="h-' + esc(u.userId) + '">Sin fecha = sin vencimiento.</span></div>' +
+      '<div class="note err small" role="alert" hidden style="margin:8px 0 0"></div></article>';
+  }
+
+  function draw() {
+    root().innerHTML = adminFrame('users',
+      '<form class="search" id="search" role="search"><input class="in" type="search" id="q" placeholder="Buscar por correo" aria-label="Buscar por correo" value="' + esc(q) + '"><button class="btn">Buscar</button></form>' +
+      '<p class="muted small" style="margin-bottom:10px">' + total + (total === 1 ? ' usuario' : ' usuarios') + (q ? ' con «' + esc(q) + '»' : '') + '</p>' +
+      users.map(card).join('') +
+      (users.length < total ? '<button class="btn block" id="more">Cargar más</button>' : ''));
+    $('#search').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      location.hash = '#/admin/users?q=' + encodeURIComponent($('#q').value.trim());
+    });
+    const more = $('#more');
+    if (more) more.addEventListener('click', async () => { more.disabled = true; await load(users.length); draw(); });
+    root().querySelectorAll('[data-user]').forEach((cardEl) => {
+      const id = cardEl.dataset.user;
+      cardEl.querySelectorAll('[data-pro]').forEach((b) => b.addEventListener('click', async () => {
+        const on = b.dataset.pro === 'on';
+        const until = on ? cardEl.querySelector('input[type=date]').value : null;
+        const err = cardEl.querySelector('.note.err');
+        b.disabled = true;
+        try {
+          await api('/admin/users/' + id + '/pro', { isPro: on, proUntil: until || null });
+          const u = users.find((x) => x.userId === id);
+          const r = await api('/admin/users?q=' + encodeURIComponent(u.email));
+          const fresh = r.users.find((x) => x.userId === id);
+          if (fresh) Object.assign(u, fresh);
+          draw();
+        } catch (e) {
+          b.disabled = false; err.hidden = false; err.textContent = e.message || errMsg(e);
+        }
+      }));
+    });
+  }
+  draw();
+}
+
+async function adminUsageView(vid) {
+  const days = Number(parseHash().q.get('days')) || 30;
+  const u = await api('/admin/usage?days=' + days);
+  if (vid !== viewId) return;
+  const n = (x) => Number(x).toLocaleString('es-HN');
+  const rows = u.byDay.map((d) => '<tr><td>' + esc(fmtDate(d.day + 'T12:00:00Z', true)) + '</td><td>' + d.calls + '</td><td>' + d.users + '</td><td>' + n(d.tokens) + '</td><td>' + (d.avgScore === null ? '—' : d.avgScore.toFixed(1)) + '</td></tr>').join('');
+  root().innerHTML = adminFrame('usage',
+    '<div class="row-actions" style="margin:0 0 14px"><label for="days" class="small">Período</label><select class="in" id="days">' +
+    [7, 30, 90].map((d) => '<option value="' + d + '"' + (d === u.days ? ' selected' : '') + '>Últimos ' + d + ' días</option>').join('') + '</select></div>' +
+    '<div class="stats four"><div class="stat"><b>' + u.totals.calls + '</b><span>Llamadas</span></div>' +
+    '<div class="stat"><b>' + u.totals.users + '</b><span>Usuarios activos</span></div>' +
+    '<div class="stat"><b>' + n(u.totals.tokens) + '</b><span>Tokens de IA</span></div>' +
+    '<div class="stat"><b>' + (u.totals.avgScore === null ? '—' : u.totals.avgScore.toFixed(1)) + '</b><span>Puntaje promedio</span></div></div>' +
+    '<section class="block"><h2>Por día</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th scope="col">Día</th><th scope="col">Llamadas</th><th scope="col">Usuarios</th><th scope="col">Tokens</th><th scope="col">Promedio</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<p class="muted small" style="margin-top:8px">Días según la hora de ' + esc(u.timeZone) + '. Solo cuentan las llamadas en las que la IA respondió.</p></section>');
+  $('#days').addEventListener('change', (e) => { location.hash = '#/admin/usage?days=' + e.target.value; });
+}
+
+async function adminScenariosView(vid) {
+  const { scenarios } = await api('/admin/scenarios');
+  if (vid !== viewId) return;
+  const note = parseHash().q.get('saved');
+  root().innerHTML = adminFrame('scenarios',
+    (note ? '<div class="note" role="status" style="background:#E1F3EA;border-color:#9FD3B8">Escenario guardado.</div>' : '') +
+    '<a class="btn primary" href="#/admin/scenario/new" style="margin-bottom:14px">Nuevo escenario</a>' +
+    scenarios.map((s) => '<div class="card sc-row"><span class="lvl lvl-' + s.difficulty + '">' + s.difficulty + '</span>' +
+      '<span><b>' + esc(s.title.es) + '</b><br><span class="muted small">' + esc(s.id) + ' · ' + (s.tier === 'pro' ? 'Pro' : 'Gratis') + ' · ' + esc(s.persona.name) + '</span></span>' +
+      '<span class="row-actions" style="margin:0"><label class="small"><input class="sw" type="checkbox" role="switch" data-toggle="' + esc(s.id) + '"' + (s.enabled ? ' checked' : '') + ' aria-label="Activo: ' + esc(s.title.es) + '"></label>' +
+      '<a class="btn" href="#/admin/scenario/' + encodeURIComponent(s.id) + '">Editar</a></span></div>').join(''));
+  root().querySelectorAll('[data-toggle]').forEach((t) => t.addEventListener('change', async () => {
+    t.disabled = true;
+    try { await api('/admin/scenarios/' + encodeURIComponent(t.dataset.toggle) + '/enabled', { enabled: t.checked }); scenarioCache = null; }
+    catch (e) { t.checked = !t.checked; alert(errMsg(e)); }
+    t.disabled = false;
+  }));
+}
+
+async function adminScenarioEdit(id, vid) {
+  const isNew = !id || id === 'new';
+  let s = null;
+  if (!isNew) {
+    const { scenarios } = await api('/admin/scenarios');
+    s = scenarios.find((x) => x.id === id);
+    if (!s) { location.hash = '#/admin/scenarios'; return; }
+  }
+  if (vid !== viewId) return;
+  const v = s || { id: '', title: { es: '', en: '' }, summaryEs: '', difficulty: 'B1', tier: 'free', category: 'support', aiRole: 'customer',
+    persona: { name: '', background: '', mood: '', speechStyle: '' }, goal: '', hiddenFacts: [], expectedFlow: ['greeting', 'verification', 'empathy', 'resolution', 'closing'], difficultyNotes: '', enabled: false };
+  const text = (fid, label, value, hint) => '<div class="field"><label for="' + fid + '">' + label + '</label><input class="in" id="' + fid + '" value="' + esc(value) + '">' + (hint ? '<small>' + hint + '</small>' : '') + '</div>';
+  const area = (fid, label, value, hint) => '<div class="field"><label for="' + fid + '">' + label + '</label><textarea class="in" id="' + fid + '">' + esc(value) + '</textarea>' + (hint ? '<small>' + hint + '</small>' : '') + '</div>';
+  const select = (fid, label, value, opts) => '<div class="field"><label for="' + fid + '">' + label + '</label><select class="in" id="' + fid + '">' + opts.map((o) => '<option value="' + o[0] + '"' + (o[0] === value ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>';
+
+  root().innerHTML = adminFrame('scenarios',
+    '<h2 style="margin-bottom:14px">' + (isNew ? 'Nuevo escenario' : esc(v.title.es)) + '</h2>' +
+    '<form id="sf" novalidate>' +
+    (isNew ? text('f-id', 'Identificador', '', 'Minúsculas, números y guiones, por ejemplo «hotel-booking». No se puede cambiar después.') : '<p class="muted small" style="margin-bottom:14px">Identificador: ' + esc(v.id) + '</p>') +
+    '<div class="grid2">' + text('f-tes', 'Título en español', v.title.es) + text('f-ten', 'Título en inglés', v.title.en) + '</div>' +
+    area('f-sum', 'Resumen para el alumno (español)', v.summaryEs) +
+    '<div class="grid2">' +
+    select('f-dif', 'Nivel', v.difficulty, [['A2', 'A2 (básico)'], ['B1', 'B1 (intermedio)'], ['B2', 'B2 (avanzado)']]) +
+    select('f-tier', 'Plan', v.tier, [['free', 'Gratis'], ['pro', 'Pro']]) +
+    select('f-cat', 'Categoría', v.category, [['support', 'Soporte'], ['sales', 'Ventas'], ['interview', 'Entrevista']]) +
+    select('f-role', 'La IA hace de', v.aiRole, [['customer', 'Cliente'], ['interviewer', 'Entrevistador']]) +
+    '</div>' +
+    '<h2 style="margin:10px 0 12px">Personaje (en inglés)</h2>' +
+    '<div class="grid2">' + text('f-pn', 'Nombre', v.persona.name, 'Por ejemplo «Mr. Tom Bennett».') + text('f-pm', 'Estado de ánimo', v.persona.mood) + '</div>' +
+    area('f-pb', 'Trasfondo', v.persona.background) +
+    text('f-ps', 'Forma de hablar', v.persona.speechStyle) +
+    area('f-goal', 'Objetivo de la llamada (en inglés)', v.goal) +
+    area('f-facts', 'Datos que conoce la IA (uno por línea, en inglés)', v.hiddenFacts.join('\n'), 'La IA los revela solo cuando se los piden.') +
+    area('f-flow', 'Etapas esperadas de la llamada (una por línea, al menos 3)', v.expectedFlow.join('\n'), 'Se usan para calificar la estructura de la llamada.') +
+    area('f-notes', 'Notas de dificultad (opcional, en inglés)', v.difficultyNotes) +
+    '<label class="row-set"><span>Activo<small>Los alumnos pueden verlo y practicarlo.</small></span><input class="sw" type="checkbox" id="f-on" role="switch"' + (v.enabled ? ' checked' : '') + '></label>' +
+    '<div class="note err" id="sf-err" role="alert" hidden></div>' +
+    '<div class="stack"><button class="btn primary block" id="sf-save">Guardar</button><a class="btn block" href="#/admin/scenarios" style="text-align:center">Cancelar</a></div></form>');
+
+  $('#sf').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const val = (fid) => $('#' + fid).value.trim();
+    const lines = (fid) => $('#' + fid).value.split('\n').map((x) => x.trim()).filter(Boolean);
+    const sid = isNew ? val('f-id') : v.id;
+    const scenario = {
+      id: sid, title: { es: val('f-tes'), en: val('f-ten') }, summaryEs: val('f-sum'),
+      difficulty: val('f-dif'), tier: val('f-tier'), category: val('f-cat'), aiRole: val('f-role'),
+      persona: { name: val('f-pn'), background: val('f-pb'), mood: val('f-pm'), speechStyle: val('f-ps') },
+      goal: val('f-goal'), hiddenFacts: lines('f-facts'), expectedFlow: lines('f-flow'),
+    };
+    if (val('f-notes')) scenario.difficultyNotes = val('f-notes');
+    const err = $('#sf-err');
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(sid)) { err.hidden = false; err.textContent = 'El identificador solo puede tener minúsculas, números y guiones.'; return; }
+    const b = $('#sf-save'); b.disabled = true;
+    try {
+      await api('/admin/scenarios/' + encodeURIComponent(sid), { scenario: scenario, enabled: $('#f-on').checked }, 'PUT');
+      scenarioCache = null;
+      location.hash = '#/admin/scenarios?saved=1';
+    } catch (e) {
+      b.disabled = false; err.hidden = false;
+      err.textContent = e.code === 'invalid_request' ? 'Revise los datos: ' + e.message : errMsg(e);
+    }
+  });
+}
+
+async function adminSettingsView(vid) {
+  const s = await api('/admin/settings');
+  if (vid !== viewId) return;
+  root().innerHTML = adminFrame('settings',
+    '<form id="stf" novalidate>' +
+    '<div class="field"><label for="lim">Llamadas gratis por día</label><input class="in" id="lim" type="number" min="0" max="100" step="1" value="' + s.freeDailyLimit + '" style="max-width:140px"><small>Para cuentas sin Pro. Los escenarios marcados como Pro siempre requieren Pro.</small></div>' +
+    '<div class="field"><label for="ins">Cómo activar Pro (texto que ven los alumnos)</label><textarea class="in" id="ins" maxlength="1000" style="min-height:140px">' + esc(s.proInstructionsEs) + '</textarea><small>Por ejemplo, cómo pagar y a quién avisar. Luego active Pro al alumno en «Usuarios».</small></div>' +
+    '<div class="note err" id="st-err" role="alert" hidden></div><div class="note" id="st-ok" role="status" hidden style="background:#E1F3EA;border-color:#9FD3B8">Ajustes guardados.</div>' +
+    '<button class="btn primary" id="st-save">Guardar</button></form>');
+  $('#stf').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const err = $('#st-err'), ok = $('#st-ok'), b = $('#st-save');
+    err.hidden = true; ok.hidden = true; b.disabled = true;
+    try {
+      await api('/admin/settings', { freeDailyLimit: Number($('#lim').value), proInstructionsEs: $('#ins').value }, 'PUT');
+      ok.hidden = false; me = null;
+    } catch (e) {
+      err.hidden = false; err.textContent = e.code === 'invalid_request' ? 'Revise los datos: ' + e.message : errMsg(e);
+    }
+    b.disabled = false;
+  });
+}
+
+/* ---------- start ---------- */
+async function boot() {
+  root().innerHTML = loadingView();
+  const stop = slowNotice();
+  let cfg;
+  try {
+    const r = await fetch(API_BASE + '/config');
+    if (!r.ok) throw new Error('config');
+    cfg = await r.json();
+  } catch {
+    stop();
+    errorView('CallReady', null, boot);
+    return;
+  }
+  stop();
+  if (!window.supabase) { errorView('CallReady', null, () => location.reload()); return; }
+  sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
+    // PKCE puts the sign-in result in ?code=, which leaves the #/ routes alone.
+    auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true },
+  });
+  const params = new URLSearchParams(location.search);
+  const { data, error } = await sb.auth.getSession();
+  session = data.session;
+  if (error || params.get('error')) loginNotice = 'No se pudo completar el inicio de sesión. Intente de nuevo.';
+  if (params.has('code') || params.has('error')) history.replaceState(null, '', location.pathname + location.hash);
+
+  // Navigate, or re-render when already there (setting the same hash fires no hashchange).
+  const go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
+  sb.auth.onAuthStateChange((event, s) => {
+    const was = session;
+    session = s;
+    // Never await Supabase calls inside this callback; schedule the re-render instead.
+    if (event === 'SIGNED_OUT' || (!s && was)) { me = null; setTimeout(() => go('#/login'), 0); }
+    else if (s && !was) { me = null; setTimeout(() => (parseHash().name === 'login' || !location.hash ? go('#/scenarios') : render()), 0); }
+  });
+  window.addEventListener('hashchange', render);
+  render();
+}
+
+boot();
 </script>
 </body>
 </html>
