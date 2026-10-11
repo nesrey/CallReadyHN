@@ -133,7 +133,20 @@ const WORD_RE = new RegExp(`(?<!${LETTER})(${UNACCENTED.join("|")})(?!${LETTER})
  */
 const CION_RE = new RegExp(`(?<!${LETTER})${LETTER}+cion(?!${LETTER})`, "giu");
 
-/** Spelling problems in the Spanish fields: unaccented words and missing opening ¿ / ¡. Empty when clean. */
+/** Words that address the learner as "tú" or "vos". The app speaks neutral Spanish ("usted" or impersonal). */
+const TU_VOS = [
+  "tú", "tu", "tus", "te", "ti", "contigo", "vos",
+  "debes", "tienes", "puedes", "quieres", "necesitas", "sabes", "eres", "estás", "haces", "dices", "usas",
+  "hablas", "practicas", "intentas", "recuerdas", "puedas", "debas", "tengas", "uses", "hables", "practiques",
+  "hiciste", "dijiste", "usaste", "completaste", "mostraste", "lograste", "hablaste", "cometiste", "resolviste",
+  "respondiste", "tuviste", "pudiste", "manejaste", "ofreciste", "seguiste", "empezaste", "terminaste",
+  "úsalo", "úsala", "fíjate", "recuérdalo", "practícalo", "inténtalo", "repítelo", "escúchalo",
+  "usá", "fijate", "tenés", "podés", "decí", "recordá", "practicá", "intentá", "escuchá", "hacé", "sos",
+  "debés", "querés", "necesitás", "sabés", "hablás", "usás",
+];
+const TU_VOS_RE = new RegExp(`(?<!${LETTER})(${TU_VOS.join("|")})(?!${LETTER})`, "giu");
+
+/** Problems in the Spanish fields: unaccented words, missing opening ¿ / ¡, and tú/vos forms. Empty when clean. */
 export function spanishSpellingIssues(f: FeedbackOutput): string[] {
   const texts = [
     ...f.corrections.map((c) => c.explanationEs),
@@ -144,6 +157,7 @@ export function spanishSpellingIssues(f: FeedbackOutput): string[] {
   for (const t of texts) {
     for (const m of t.matchAll(WORD_RE)) issues.add(`"${m[0]}" needs its accent`);
     for (const m of t.matchAll(CION_RE)) issues.add(`"${m[0]}" needs its accent`);
+    for (const m of t.matchAll(TU_VOS_RE)) issues.add(`"${m[0]}" addresses the learner as tú/vos; use usted or an impersonal form`);
     if (t.includes("?") && !t.includes("¿")) issues.add("a question is missing the opening ¿");
     if (t.includes("!") && !t.includes("¡")) issues.add("an exclamation is missing the opening ¡");
   }
@@ -210,7 +224,7 @@ export async function callWithRetry<T>(opts: RetryOptions<T>): Promise<T> {
       { role: "assistant", content: first.text.trim() },
       {
         role: "user",
-        content: `Your Spanish text has spelling errors: ${issues.join("; ")}. Return the same JSON with every Spanish field rewritten in correct Spanish spelling (all accents, ñ, opening ¿ and ¡). Keep the scores and the English text unchanged. Return ONLY the JSON.`,
+        content: `Your Spanish text has problems: ${issues.join("; ")}. Return the same JSON with every Spanish field rewritten in correct, neutral Spanish (all accents, ñ, opening ¿ and ¡; address the learner with "usted"). Keep the scores and the English text unchanged. Return ONLY the JSON.`,
       },
     ],
   });

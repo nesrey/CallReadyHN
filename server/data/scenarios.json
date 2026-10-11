@@ -137,7 +137,7 @@
   {
     "id": "job-interview",
     "title": { "es": "Entrevista de trabajo bilingüe", "en": "Bilingual job interview" },
-    "summaryEs": "Una reclutadora de RR. HH. te entrevista para un puesto de call center bilingüe.",
+    "summaryEs": "Una reclutadora de RR. HH. le hace una entrevista para un puesto de call center bilingüe.",
     "difficulty": "B2",
     "tier": "pro",
     "category": "interview",

@@ -313,19 +313,19 @@ const SCORE_LABELS = {
 const LEVEL_NAMES = { A2: 'Básico', B1: 'Intermedio', B2: 'Avanzado' };
 
 const ERR = {
-  rate_limited: 'Hiciste muchas solicitudes seguidas. Esperá un momento y probá de nuevo.',
+  rate_limited: 'Se enviaron muchas solicitudes seguidas. Espere un momento e intente de nuevo.',
   session_token_cap: 'Esta llamada llegó a su límite de uso.',
-  llm_unavailable: 'El servicio de IA no está disponible ahora. Intentá de nuevo en unos segundos.',
-  llm_busy: 'Se alcanzó el límite de uso de la IA por ahora. Probá de nuevo más tarde.',
-  llm_bad_output: 'La IA dio una respuesta que no se pudo leer. Intentá de nuevo.',
-  not_enough_speech: 'Hablaste muy poco en esta llamada. Necesitás al menos dos respuestas en inglés para recibir retroalimentación.',
-  network: 'No hay conexión con el servidor. Revisá tu internet.',
+  llm_unavailable: 'El servicio de IA no está disponible ahora. Intente de nuevo en unos segundos.',
+  llm_busy: 'Se alcanzó el límite de uso de la IA por ahora. Intente de nuevo más tarde.',
+  llm_bad_output: 'La IA dio una respuesta que no se pudo leer. Intente de nuevo.',
+  not_enough_speech: 'Hubo muy poca conversación en esta llamada. Se necesitan al menos dos respuestas en inglés para recibir retroalimentación.',
+  network: 'No hay conexión con el servidor. Revise su conexión a internet.',
   call_over: 'La llamada ya terminó.',
-  invalid_request: 'Algo salió mal con la solicitud. Intentá de nuevo.',
+  invalid_request: 'Algo salió mal con la solicitud. Intente de nuevo.',
 };
 function errMsg(e) {
-  if (e.code === 'rate_limited' && e.retryAfter) return 'Hiciste muchas solicitudes seguidas. Probá de nuevo en ' + e.retryAfter + ' segundos.';
-  return ERR[e.code] || 'Ocurrió un error inesperado. Intentá de nuevo.';
+  if (e.code === 'rate_limited' && e.retryAfter) return 'Se enviaron muchas solicitudes seguidas. Intente de nuevo en ' + e.retryAfter + ' segundos.';
+  return ERR[e.code] || 'Ocurrió un error inesperado. Intente de nuevo.';
 }
 
 async function api(path, body) {
@@ -434,10 +434,10 @@ function onboardingView() {
     ['B2', 'Avanzado (B2)', 'Hablo con bastante fluidez, aunque todavía cometo errores.'],
   ];
   const choice = (g, k, t, d, attr) => '<button type="button" class="choice" data-' + attr + '="' + k + '" aria-pressed="' + (g === k) + '"><b>' + t + '</b><span>' + d + '</span></button>';
-  root().innerHTML = '<main><header class="top"><h1>Bienvenido a CallReady</h1></header>' +
-    '<p class="lead">Practicá llamadas de servicio al cliente en inglés con un cliente de IA y recibí retroalimentación en español.</p>' +
-    '<fieldset><legend>¿Cuál es tu objetivo?</legend>' + goals.map((x) => choice(goal, x[0], x[1], x[2], 'goal')).join('') + '</fieldset>' +
-    '<fieldset><legend>¿Cómo calificás tu inglés hoy?</legend>' + levels.map((x) => choice(level, x[0], x[1], x[2], 'level')).join('') + '</fieldset>' +
+  root().innerHTML = '<main><header class="top"><h1>Le damos la bienvenida a CallReady</h1></header>' +
+    '<p class="lead">Practique llamadas de servicio al cliente en inglés con un cliente de IA y reciba retroalimentación en español.</p>' +
+    '<fieldset><legend>¿Cuál es su objetivo?</legend>' + goals.map((x) => choice(goal, x[0], x[1], x[2], 'goal')).join('') + '</fieldset>' +
+    '<fieldset><legend>¿Cómo calificaría su inglés hoy?</legend>' + levels.map((x) => choice(level, x[0], x[1], x[2], 'level')).join('') + '</fieldset>' +
     '<button class="btn primary block" id="go" disabled>Empezar</button></main>';
   const go = $('#go');
   const sync = () => { go.disabled = !(goal && level); };
@@ -457,14 +457,14 @@ function onboardingView() {
 
 /* ---------- scenarios ---------- */
 async function scenariosView(vid) {
-  root().innerHTML = shell('<header class="top"><h1>Elegí una llamada</h1></header><p class="muted" id="loading">Cargando…</p>', 'scenarios');
+  root().innerHTML = shell('<header class="top"><h1>Elija una llamada</h1></header><p class="muted" id="loading">Cargando…</p>', 'scenarios');
   // The free Render server sleeps when idle and takes up to a minute to wake up.
   const slow = setTimeout(() => { const el = $('#loading'); if (el) el.textContent = 'Despertando el servidor… La primera carga puede tardar hasta un minuto.'; }, 4000);
   let list;
   try { list = await getScenarios(); } catch {
     clearTimeout(slow);
     if (vid !== viewId) return;
-    root().innerHTML = shell('<header class="top"><h1>Elegí una llamada</h1></header><div class="note err">No se pudieron cargar las llamadas. Revisá que el servidor esté activo.<br><button class="btn" id="retry">Reintentar</button></div>', 'scenarios');
+    root().innerHTML = shell('<header class="top"><h1>Elija una llamada</h1></header><div class="note err">No se pudieron cargar las llamadas. Verifique que el servidor esté activo.<br><button class="btn" id="retry">Reintentar</button></div>', 'scenarios');
     $('#retry').addEventListener('click', () => scenariosView(vid));
     return;
   }
@@ -482,10 +482,10 @@ async function scenariosView(vid) {
       '<span class="lvl lvl-' + s.difficulty + '" title="' + LEVEL_NAMES[s.difficulty] + '">' + s.difficulty + '</span>' +
       '<span class="sc-main"><b>' + esc(s.title.es) + '</b><span class="muted">' + esc(s.summaryEs) + '</span>' +
       '<span class="who">' + esc(s.personaName) + '</span>' +
-      (s.difficulty === profile.level ? '<span class="fit">Para tu nivel</span>' : '') + '</span>' +
+      (s.difficulty === profile.level ? '<span class="fit">Para su nivel</span>' : '') + '</span>' +
       '<span class="sc-end">' + (locked ? I.lock + 'Pro' : '') + '</span></button>';
   }).join('');
-  root().innerHTML = shell('<header class="top"><h1>Elegí una llamada</h1></header>' + counter + '<div id="msg" class="note" role="status" hidden></div>' + cards, 'scenarios');
+  root().innerHTML = shell('<header class="top"><h1>Elija una llamada</h1></header>' + counter + '<div id="msg" class="note" role="status" hidden></div>' + cards, 'scenarios');
   root().querySelectorAll('.sc').forEach((b) => b.addEventListener('click', () => {
     const s = list.find((x) => x.id === b.dataset.id);
     const gate = canStartCall({ isPro: isPro(), scenario: s, startsToday: callsToday(store.get('starts', []), new Date()) });
@@ -493,7 +493,7 @@ async function scenariosView(vid) {
     if (gate.reason === 'pro_required') { location.hash = '#/pro?why=pro_required'; return; }
     const m = $('#msg');
     m.hidden = false;
-    m.innerHTML = 'Ya usaste tus ' + FREE_DAILY_LIMIT + ' llamadas gratis de hoy. Volvé mañana o conocé Pro para practicar sin límite.<br><a class="btn" href="#/pro?why=daily_limit" style="display:inline-block;margin-top:10px;text-decoration:none">Ver Pro</a>';
+    m.innerHTML = 'Ya usó sus ' + FREE_DAILY_LIMIT + ' llamadas gratis de hoy. Vuelva mañana o conozca Pro para practicar sin límite.<br><a class="btn" href="#/pro?why=daily_limit" style="display:inline-block;margin-top:10px;text-decoration:none">Ver Pro</a>';
     m.scrollIntoView({ block: 'nearest' });
   }));
 }
@@ -503,7 +503,7 @@ async function callView(id, vid) {
   let list;
   try { list = await getScenarios(); } catch {
     if (vid !== viewId) return;
-    root().innerHTML = '<main>' + backHeader('Llamada', '#/scenarios') + '<div class="note err">No se pudo cargar la llamada. Revisá que el servidor esté activo.</div></main>';
+    root().innerHTML = '<main>' + backHeader('Llamada', '#/scenarios') + '<div class="note err">No se pudo cargar la llamada. Verifique que el servidor esté activo.</div></main>';
     return;
   }
   if (vid !== viewId) return;
@@ -528,7 +528,7 @@ async function callView(id, vid) {
     '<div class="transcript" id="tr" aria-label="Transcripción"></div>' +
     '<div id="notice" hidden></div><div id="hint"></div>' +
     '<div class="bar"><button class="mic" id="mic" aria-label="Hablar" title="Hablar">' + I.mic + '</button>' +
-    '<input id="txt" type="text" maxlength="500" autocomplete="off" autocapitalize="sentences" placeholder="Escribí tu respuesta en inglés" aria-label="Tu respuesta en inglés">' +
+    '<input id="txt" type="text" maxlength="500" autocomplete="off" autocapitalize="sentences" placeholder="Escriba su respuesta en inglés" aria-label="Su respuesta en inglés">' +
     '<button class="send" id="send">Enviar</button></div></section>';
 
   const el = (s) => $(s);
@@ -571,8 +571,8 @@ async function callView(id, vid) {
   function hideNotice() { const n = el('#notice'); if (n) { n.hidden = true; n.innerHTML = ''; } }
 
   function hint() {
-    const msg = !SR ? 'Este navegador no permite reconocimiento de voz. Usá Chrome o Edge, o escribí tus respuestas abajo.'
-      : !secure ? 'El micrófono solo funciona en una página segura (HTTPS o localhost). Mientras tanto, escribí tus respuestas abajo.' : '';
+    const msg = !SR ? 'Este navegador no permite reconocimiento de voz. Use Chrome o Edge, o escriba sus respuestas abajo.'
+      : !secure ? 'El micrófono solo funciona en una página segura (HTTPS o localhost). Mientras tanto, escriba sus respuestas abajo.' : '';
     const h = el('#hint');
     if (h && msg) h.innerHTML = '<div class="note small">' + esc(msg) + '</div>';
   }
@@ -601,7 +601,7 @@ async function callView(id, vid) {
       state.speaking = false;
       if (state.ended) return;
       if (data.callEnded) { await finishCall(); return; }
-      setStatus('Te toca. Tocá el micrófono o escribí.');
+      setStatus('Es su turno. Toque el micrófono o escriba.');
       const t = el('#txt'); if (t && !state.busy) { updateUi(); t.focus({ preventScroll: true }); }
     } catch (e) {
       if (state.ended) return;
@@ -624,12 +624,12 @@ async function callView(id, vid) {
   }
 
   const MIC_ERR = {
-    'not-allowed': 'El navegador no tiene permiso para usar el micrófono. Permitilo desde el candado de la barra de direcciones, o escribí tu respuesta.',
-    'service-not-allowed': 'El navegador no tiene permiso para usar el micrófono. Permitilo desde el candado de la barra de direcciones, o escribí tu respuesta.',
-    'no-speech': 'No te escuché. Probá de nuevo o escribí tu respuesta.',
+    'not-allowed': 'El navegador no tiene permiso para usar el micrófono. Permítalo desde el candado de la barra de direcciones, o escriba su respuesta.',
+    'service-not-allowed': 'El navegador no tiene permiso para usar el micrófono. Permítalo desde el candado de la barra de direcciones, o escriba su respuesta.',
+    'no-speech': 'No se escuchó nada. Intente de nuevo o escriba su respuesta.',
     'audio-capture': 'No se encontró un micrófono.',
-    'network': 'El reconocimiento de voz necesita internet. Escribí tu respuesta mientras tanto.',
-    'language-not-supported': 'Este navegador no reconoce inglés por voz. Escribí tu respuesta.',
+    'network': 'El reconocimiento de voz necesita internet. Escriba su respuesta mientras tanto.',
+    'language-not-supported': 'Este navegador no reconoce inglés por voz. Escriba su respuesta.',
   };
 
   function startMic() {
@@ -652,18 +652,18 @@ async function callView(id, vid) {
       state.listening = false; state.rec = null;
       if (live) live.remove();
       if (state.ended) return;
-      setStatus('Te toca. Tocá el micrófono o escribí.'); updateUi();
+      setStatus('Es su turno. Toque el micrófono o escriba.'); updateUi();
       const text = finalText.trim();
       if (text) {
         if (autoSend()) sendAgent(text); else { const t = el('#txt'); t.value = text; t.focus(); }
       } else if (lastErr && lastErr !== 'aborted') {
-        showNotice(MIC_ERR[lastErr] || 'No se pudo usar el micrófono. Escribí tu respuesta.');
+        showNotice(MIC_ERR[lastErr] || 'No se pudo usar el micrófono. Escriba su respuesta.');
       } else if (!lastErr) {
         showNotice(MIC_ERR['no-speech']);
       }
     };
-    try { r.start(); } catch { showNotice('No se pudo iniciar el micrófono. Escribí tu respuesta.'); return; }
-    state.rec = r; state.listening = true; updateUi(); setStatus('Escuchando… hablá en inglés', 'listening');
+    try { r.start(); } catch { showNotice('No se pudo iniciar el micrófono. Escriba su respuesta.'); return; }
+    state.rec = r; state.listening = true; updateUi(); setStatus('Escuchando… hable en inglés', 'listening');
   }
   function stopMic() { try { if (state.rec) state.rec.stop(); } catch { /* ignore */ } }
 
@@ -680,7 +680,7 @@ async function callView(id, vid) {
     await generateFeedback();
   }
   async function generateFeedback() {
-    overlay('<div class="spinner" aria-hidden="true"></div><p>Preparando tu retroalimentación…</p>');
+    overlay('<div class="spinner" aria-hidden="true"></div><p>Preparando su retroalimentación…</p>');
     try {
       const fb = await api('/session/feedback', { sessionId: sessionId, scenarioId: sc.id, history: state.history });
       const feedback = { scores: fb.scores, corrections: fb.corrections, phrases: fb.phrases, overallSummaryEs: fb.overallSummaryEs };
@@ -709,7 +709,7 @@ async function callView(id, vid) {
       if (confirm('Todavía no hay suficiente conversación para dar retroalimentación. ¿Salir de la llamada?')) { cleanup(); location.hash = '#/scenarios'; }
       return;
     }
-    if (confirm('¿Colgar y ver tu retroalimentación?')) finishCall();
+    if (confirm('¿Colgar y ver su retroalimentación?')) finishCall();
   });
 
   hint(); updateUi();
@@ -729,7 +729,7 @@ function feedbackView(callId) {
     return '<div class="score"><span>' + SCORE_LABELS[k] + '</span><div class="meter" aria-hidden="true"><i class="' + (v <= 4 ? 'lo' : v >= 8 ? 'hi' : '') + '" style="width:' + v * 10 + '%"></i></div><b>' + v + '</b></div>';
   }).join('');
   const fixes = f.corrections.map((c) =>
-    '<article class="fix"><div class="row said"><span class="tag">Dijiste</span><q>' + esc(c.said) + '</q></div>' +
+    '<article class="fix"><div class="row said"><span class="tag">Lo que dijo</span><q>' + esc(c.said) + '</q></div>' +
     '<div class="row better"><span class="tag">Mejor</span><q>' + esc(c.better) + '</q></div>' +
     '<p class="why">' + esc(c.explanationEs) + '</p></article>').join('');
   const phrases = f.phrases.map((p, i) =>
@@ -738,7 +738,7 @@ function feedbackView(callId) {
   root().innerHTML = '<main>' + backHeader(call.scenarioTitle, '#/scenarios') +
     '<div class="avg"><span class="avg-n">' + call.avg.toFixed(1) + '</span><span class="muted">de 10 en promedio</span></div>' +
     (f.overallSummaryEs ? '<p class="lead" style="margin-top:4px">' + esc(f.overallSummaryEs) + '</p>' : '') +
-    '<section class="block"><h2>Tus puntajes</h2><div class="scores">' + scoreRows + '</div></section>' +
+    '<section class="block"><h2>Sus puntajes</h2><div class="scores">' + scoreRows + '</div></section>' +
     '<section class="block"><h2>Las 3 correcciones más importantes</h2>' + fixes + '</section>' +
     '<section class="block"><h2>Frases útiles para call center</h2>' + phrases + '</section>' +
     '<div class="stack"><a class="btn primary block" style="text-align:center;text-decoration:none" href="#/call/' + encodeURIComponent(call.scenarioId) + '">Repetir llamada</a>' +
@@ -769,17 +769,17 @@ function progressView() {
   const unit = (n) => (n === 1 ? 'día' : 'días');
   let body;
   if (!calls.length) {
-    body = '<div class="empty"><p><b>Todavía no hiciste ninguna llamada.</b></p><p class="muted">Tu historial y tu racha aparecerán aquí después de tu primera práctica.</p><a class="btn primary" href="#/scenarios" style="display:inline-block;text-decoration:none">Hacer una llamada</a></div>';
+    body = '<div class="empty"><p><b>Todavía no hay llamadas.</b></p><p class="muted">Su historial y su racha aparecerán aquí después de su primera práctica.</p><a class="btn primary" href="#/scenarios" style="display:inline-block;text-decoration:none">Hacer una llamada</a></div>';
   } else {
     const pts = trendPoints(calls, 20);
     const hist = calls.slice().reverse().map((c) =>
       '<a class="hist" href="#/feedback/' + c.id + '" style="color:inherit;text-decoration:none"><span><b>' + esc(c.scenarioTitle) + '</b><br><span class="muted small">' +
       fmt.format(new Date(c.startedAt)) + ', ' + formatTime(c.durationSec) + ' min, nivel ' + c.difficulty + '</span></span><span class="sc-n">' + c.avg.toFixed(1) + '</span></a>').join('');
     body = '<section class="block"><h2>Tendencia</h2><div class="chart">' + trendSvg(pts) + '</div>' +
-      (pts.length < 2 ? '<p class="muted small" style="margin-top:8px">Hacé otra llamada para ver cómo cambia tu puntaje.</p>' : '') + '</section>' +
+      (pts.length < 2 ? '<p class="muted small" style="margin-top:8px">Haga otra llamada para ver cómo cambia su puntaje.</p>' : '') + '</section>' +
       '<section class="block"><h2>Historial</h2>' + hist + '</section>';
   }
-  root().innerHTML = shell('<header class="top"><h1>Tu progreso</h1></header>' +
+  root().innerHTML = shell('<header class="top"><h1>Su progreso</h1></header>' +
     '<div class="stats"><div class="stat"><b>' + streak.current + '</b><span>' + 'Racha actual (' + unit(streak.current) + ')</span></div>' +
     '<div class="stat"><b>' + streak.best + '</b><span>Mejor racha (' + unit(streak.best) + ')</span></div>' +
     '<div class="stat"><b>' + calls.length + '</b><span>Llamadas</span></div></div>' + body, 'progress');
@@ -789,31 +789,31 @@ function progressView() {
 function settingsView() {
   root().innerHTML = shell('<header class="top"><h1>Ajustes</h1></header>' +
     '<section class="block" style="margin-top:6px"><h2>Práctica</h2>' +
-    '<label class="row-set"><span>Enviar al terminar de hablar<small>Si lo apagás, revisás tu texto antes de enviarlo.</small></span><input class="sw" type="checkbox" id="auto" role="switch"' + (autoSend() ? ' checked' : '') + '></label>' +
-    '<a class="row-set" href="#/onboarding" style="color:inherit;text-decoration:none"><span>Cambiar objetivo y nivel<small>Reordena las llamadas según tu nivel.</small></span></a></section>' +
+    '<label class="row-set"><span>Enviar al terminar de hablar<small>Si se desactiva, puede revisar el texto antes de enviarlo.</small></span><input class="sw" type="checkbox" id="auto" role="switch"' + (autoSend() ? ' checked' : '') + '></label>' +
+    '<a class="row-set" href="#/onboarding" style="color:inherit;text-decoration:none"><span>Cambiar objetivo y nivel<small>Reordena las llamadas según su nivel.</small></span></a></section>' +
     '<section class="block"><h2>Opciones de desarrollo</h2>' +
     '<label class="row-set"><span>Modo Pro (prueba)<small>Llamadas ilimitadas y escenarios B2 y de entrevista. Solo para el piloto.</small></span><input class="sw" type="checkbox" id="pro" role="switch"' + (isPro() ? ' checked' : '') + '></label>' +
-    '<button class="row-set danger" id="reset" style="width:100%;text-align:left"><span>Borrar mi historial<small>Elimina tus llamadas, tu racha y tu perfil de este dispositivo.</small></span></button>' +
+    '<button class="row-set danger" id="reset" style="width:100%;text-align:left"><span>Borrar mi historial<small>Elimina sus llamadas, su racha y su perfil de este dispositivo.</small></span></button>' +
     '<p class="muted small">Identificador anónimo: ' + esc(deviceId().slice(0, 8)) + '</p></section>', 'settings');
   $('#auto').addEventListener('change', (e) => store.set('autoSend', e.target.checked));
   $('#pro').addEventListener('change', (e) => store.set('isPro', e.target.checked));
   $('#reset').addEventListener('click', () => {
-    if (!confirm('¿Borrar todo tu historial en este dispositivo? No se puede deshacer.')) return;
+    if (!confirm('¿Borrar todo su historial en este dispositivo? No se puede deshacer.')) return;
     store.set('calls', []); store.set('starts', []); store.set('profile', null);
     location.hash = '#/onboarding';
   });
 }
 
 function proView(why) {
-  const msg = why === 'pro_required' ? 'Esta llamada es parte de Pro.' : why === 'daily_limit' ? 'Ya usaste tus 2 llamadas gratis de hoy.' : '';
+  const msg = why === 'pro_required' ? 'Esta llamada es parte de Pro.' : why === 'daily_limit' ? 'Ya usó sus 2 llamadas gratis de hoy.' : '';
   root().innerHTML = '<main>' + backHeader('CallReady Pro', '#/scenarios') +
     (msg ? '<div class="note">' + esc(msg) + '</div>' : '') +
-    '<p class="lead">Practicá todo lo que necesités antes de tu próxima llamada o entrevista real.</p>' +
+    '<p class="lead">Practique todo lo que necesite antes de su próxima llamada o entrevista real.</p>' +
     '<ul class="benefits"><li><b>Llamadas ilimitadas</b>Sin tope diario de práctica.</li>' +
     '<li><b>Escenarios de nivel B2</b>Clientes que hablan rápido, usan modismos y se enojan de verdad.</li>' +
-    '<li><b>Entrevista de trabajo bilingüe</b>Una reclutadora de RR. HH. te hace las preguntas de un puesto de call center.</li></ul>' +
+    '<li><b>Entrevista de trabajo bilingüe</b>Una reclutadora de RR. HH. le hace las preguntas de un puesto de call center.</li></ul>' +
     '<button class="btn primary block" disabled>Próximamente</button>' +
-    '<p class="muted small" style="margin-top:12px">Durante el piloto podés probar Pro desde Ajustes.</p></main>';
+    '<p class="muted small" style="margin-top:12px">Durante el piloto puede probar Pro desde Ajustes.</p></main>';
 }
 
 render();

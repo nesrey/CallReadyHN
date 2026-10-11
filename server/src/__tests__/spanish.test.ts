@@ -13,7 +13,7 @@ const withSpanish = (es: string): FeedbackOutput => {
 const bad = (es: string) => JSON.stringify({ ...JSON.parse(goodFeedback), overallSummaryEs: es });
 
 test("spelling: clean Spanish passes", () => {
-  assert.deepEqual(spanishSpellingIssues(withSpanish("Después de la preposición «for», el verbo lleva -ing. ¿Lo ves? ¡Muy bien!")), []);
+  assert.deepEqual(spanishSpellingIssues(withSpanish("Después de la preposición «for», el verbo lleva -ing. ¿Lo ve? ¡Muy bien!")), []);
   assert.deepEqual(spanishSpellingIssues(withSpanish("Las preposiciones y las expresiones comunes ayudan más.")), []);
 });
 
@@ -36,7 +36,7 @@ test("spelling: catches missing opening ¿ and ¡ but not English text", () => {
 
 test("spelling: accented and ñ words are not flagged, and words only match whole", () => {
   assert.deepEqual(spanishSpellingIssues(withSpanish("Español, inglés, día, mañana, diámetro, asistente, utilidad.")), []);
-  assert.deepEqual(spanishSpellingIssues(withSpanish('Usá "expression" o "decision" en lugar de "session".')), []);
+  assert.deepEqual(spanishSpellingIssues(withSpanish('Use "expression" o "decision" en lugar de "session".')), []);
 });
 
 const fbOpts = (llm: MockLlm, used: number[] = []) => ({
@@ -80,9 +80,23 @@ test("callWithRetry: if the rewrite still has issues it is used anyway (no third
   assert.equal(llm.calls.length, 2);
 });
 
-test("feedback prompt asks for accents, opening marks and vos forms", () => {
+test("feedback prompt asks for accents, opening marks and usted", () => {
   const sys = buildFeedbackSystem(loadScenariosFromDisk()[0]!);
   assert.match(sys, /accent/);
   assert.match(sys, /¿ and ¡/);
-  assert.match(sys, /"vos"/);
+  assert.match(sys, /"usted"/);
+  assert.match(sys, /Never use "tú" forms/);
+});
+
+test("register: tú and vos forms seen from Gemini are flagged, usted is not", () => {
+  const issues = spanishSpellingIssues(
+    withSpanish("Úsalo al inicio. Debes usar el presente. Dijiste bien. Usá tu micrófono si podés."),
+  );
+  for (const w of ["Úsalo", "Debes", "Dijiste", "Usá", "tu", "podés"]) {
+    assert.ok(issues.some((i) => i.startsWith(`"${w}" addresses`)), `expected ${w} in ${issues.join(" | ")}`);
+  }
+  assert.deepEqual(
+    spanishSpellingIssues(withSpanish("Úselo al inicio. Debe usar el presente. Usted dijo bien. Se recomienda practicar.")),
+    [],
+  );
 });

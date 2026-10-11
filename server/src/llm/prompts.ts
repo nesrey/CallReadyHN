@@ -116,8 +116,8 @@ SUMMARY: "overallSummaryEs": 1-2 encouraging sentences in Spanish with one concr
 
 SPANISH WRITING (this is a language-learning app, so the Spanish must be flawless):
 - Correct spelling with every accent mark (á, é, í, ó, ú, ü), ñ, and opening ¿ and ¡. A missing accent is a spelling error. Examples: después, preposición, también, día, más (when it means "more"), ¿Hay algo más en lo que pueda ayudarle?
-- Address the learner with "vos" forms, as the rest of the app does: usá, fijate, tenés, podés, decí, recordá. Do not use "tú" forms (usa, fíjate, tienes, debes).
-- In "meaningEs", translate customer-facing phrases with "usted", as an agent would speak to a customer (Permítame verificar su cuenta).
+- Neutral, professional Spanish. Address the learner with "usted" (use, fíjese, tiene, puede, dijo, su respuesta) or impersonal forms (se recomienda, conviene). Never use "tú" forms (usa, fíjate, tienes, debes, dijiste, tu) or "vos" forms (usá, tenés, podés).
+- In "meaningEs", translate customer-facing phrases with "usted" as well (Permítame verificar su cuenta).
 - Correct grammar and punctuation; no anglicisms when a common Spanish word exists.
 
 OUTPUT: ONLY valid JSON, exactly this shape, no markdown:
