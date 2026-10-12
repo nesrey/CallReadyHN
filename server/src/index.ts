@@ -56,7 +56,7 @@ async function main() {
       auth: createSupabaseAuth({ supabaseUrl: accounts.supabaseUrl, jwtSecret: accounts.supabaseJwtSecret }),
       publicConfig: { supabaseUrl: accounts.supabaseUrl, supabaseKey: accounts.supabaseKey },
     },
-    { webDir: fileURLToPath(new URL("../../web", import.meta.url)) },
+    { siteDir: fileURLToPath(new URL("../..", import.meta.url)) },
   );
 
   app.listen(config.port, config.host, () => {

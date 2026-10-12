@@ -2,7 +2,7 @@ import type { AuthUser } from "./auth.js";
 import { proActive, ROLES, type Role } from "./db/store.js";
 import { ApiError } from "./errors.js";
 import { nowOf, presentFeedback, type Deps } from "./handlers.js";
-import { rubricFor } from "./llm/rubric.js";
+import { CUSTOMER_RUBRIC, rubricFor } from "./llm/rubric.js";
 import { CALL_TYPES, type CallType } from "./scenarios/load.js";
 import { startOfDay } from "./time.js";
 import { isUuid } from "./validate.js";
@@ -50,8 +50,15 @@ export async function updateMe(deps: Deps, user: AuthUser, body: unknown) {
 }
 
 export async function listMyCalls(deps: Deps, user: AuthUser) {
-  const calls = await deps.store.listCalls(user.userId, 200);
-  return { calls: calls.map((c) => ({ ...c, startedAt: c.startedAt.toISOString() })) };
+  const [calls, skills] = await Promise.all([deps.store.listCalls(user.userId, 200), deps.store.skillAverages(user.userId)]);
+  return {
+    calls: calls.map((c) => ({ ...c, startedAt: c.startedAt.toISOString() })),
+    // In scorecard order, only the items the learner has been scored on.
+    skills: CUSTOMER_RUBRIC.flatMap((c) => {
+      const s = skills.find((x) => x.key === c.key);
+      return s ? [{ key: c.key, label: c.label, avg: s.avg, n: s.n }] : [];
+    }),
+  };
 }
 
 export async function getMyCall(deps: Deps, user: AuthUser, id: string) {

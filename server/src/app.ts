@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { getMe, getMyCall, isAdmin, listMyCalls, updateMe } from "./account.js";
 import {
@@ -23,7 +24,8 @@ const json = (fn: Handler) => (req: Request, res: Response, next: NextFunction) 
 };
 const userOf = (res: Response) => res.locals.user as AuthUser;
 
-export function createApp(deps: AppDeps, opts: { webDir: string }) {
+/** siteDir is the repo root; only the site's own pages are served from it, never the rest of the repo. */
+export function createApp(deps: AppDeps, opts: { siteDir: string }) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "32kb" }));
@@ -124,7 +126,12 @@ export function createApp(deps: AppDeps, opts: { webDir: string }) {
   app.get("/admin/settings", ...admin, json(() => adminGetSettings(deps)));
   app.put("/admin/settings", ...admin, json((req) => adminSaveSettings(deps, req.body)));
 
-  app.use(express.static(opts.webDir));
+  // The live site is GitHub Pages; this serves the same pages for local development.
+  const page = (file: string) => (_req: Request, res: Response) => res.sendFile(join(opts.siteDir, file));
+  app.get(["/", "/index.html"], page("index.html"));
+  app.get("/privacy.html", page("privacy.html"));
+  app.use("/app", express.static(join(opts.siteDir, "app")));
+  app.use("/web", express.static(join(opts.siteDir, "web")));
 
   app.use((_req: Request, _res: Response, next: NextFunction) => next(new ApiError(404, "not_found", "Not found.")));
 

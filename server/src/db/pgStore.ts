@@ -3,7 +3,7 @@ import type { CallType, Scenario, Temperament, Tier } from "../scenarios/load.js
 import type { Message } from "../types.js";
 import { DB, SCHEMA_SQL } from "./schema.js";
 import type {
-  AdminUser, CallDetail, CallRow, CallSummary, Profile, Role, Settings, Store, StoredScenario, UsageRow,
+  AdminUser, CallDetail, CallRow, CallSummary, Profile, Role, Settings, SkillAverage, Store, StoredScenario, UsageRow,
 } from "./store.js";
 
 /** The part of node-postgres' Pool (and PGlite, used in tests) this store needs. */
@@ -290,6 +290,19 @@ export class PgStore implements Store {
       [userId, limit],
     );
     return rows.map(toSummary);
+  }
+
+  async skillAverages(userId: string): Promise<SkillAverage[]> {
+    const { rows } = await this.db.query(
+      `select k.key, avg(k.score) as avg, count(*) as n
+       from ${DB}.call_criteria k
+       join ${DB}.calls c on c.id = k.call_id
+       join ${DB}.scenarios s on s.id = c.scenario_id
+       where c.user_id = $1 and s.call_type <> 'interview'
+       group by k.key`,
+      [userId],
+    );
+    return rows.map((r) => ({ key: String(r.key), avg: Math.round(Number(r.avg) * 10) / 10, n: num(r.n) }));
   }
 
   async listUsers(opts: { query: string; limit: number; offset: number }): Promise<{ users: AdminUser[]; total: number }> {

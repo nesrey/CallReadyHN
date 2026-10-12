@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 // The web app keeps its pure logic between LOGIC:START / LOGIC:END markers so it can be tested here.
-const html = readFileSync(new URL("../../../web/index.html", import.meta.url), "utf8");
+const html = readFileSync(new URL("../../../app/index.html", import.meta.url), "utf8");
 const block = html.split("/* LOGIC:START")[1]?.split("/* LOGIC:END */")[0];
-assert.ok(block, "LOGIC markers not found in web/index.html");
+assert.ok(block, "LOGIC markers not found in app/index.html");
 
 const L = new Function(
   `${block.slice(block.indexOf("*/") + 2)}
-   return { computeStreak, canStartCall, avgScores, sortScenarios, formatTime, trendPoints, dateKey, freeUsedText };`,
+   return { computeStreak, canStartCall, sortScenarios, formatTime, trendPoints, dateKey, freeUsedText, verdict, markQuotes };`,
 )() as Record<string, any>;
 
 const d = (s: string) => new Date(s); // local-time dates, e.g. "2026-10-11T12:00:00"
@@ -69,38 +69,53 @@ test("free users cannot start pro scenarios; pro users have no limits", () => {
 });
 
 test("freeUsedText uses the right number and plural", () => {
-  assert.equal(L.freeUsedText(2), "Ya usó sus 2 llamadas gratis de hoy.");
-  assert.equal(L.freeUsedText(1), "Ya usó su llamada gratis de hoy.");
-  assert.equal(L.freeUsedText(0), "Hoy no hay llamadas gratis disponibles.");
+  assert.equal(L.freeUsedText(2), "You have used your 2 free calls for today.");
+  assert.equal(L.freeUsedText(1), "You have used your free call for today.");
+  assert.equal(L.freeUsedText(0), "There are no free calls available today.");
 });
 
-test("avgScores averages the five scores to one decimal", () => {
-  assert.equal(L.avgScores({ fluency: 6, grammar: 5, vocabulary: 6, empathyPoliteness: 7, callFlow: 6 }), 6);
-  assert.equal(L.avgScores({ fluency: 7, grammar: 6, vocabulary: 6, empathyPoliteness: 8, callFlow: 7 }), 6.8);
-  assert.equal(L.avgScores({}), 0);
+test("verdict names the QA band", () => {
+  assert.equal(L.verdict(92), "Ready for live calls");
+  assert.equal(L.verdict(85), "Ready for live calls");
+  assert.equal(L.verdict(70), "Solid call");
+  assert.equal(L.verdict(55), "Needs coaching");
+  assert.equal(L.verdict(20), "Keep practicing");
 });
 
-test("trendPoints returns chronological averages, last N only", () => {
+test("trendPoints returns chronological QA scores, last N only", () => {
   const calls = [
-    { startedAt: "2026-10-03T10:00:00Z", avg: 7 },
-    { startedAt: "2026-10-01T10:00:00Z", avg: 5 },
-    { startedAt: "2026-10-02T10:00:00Z", avg: 6 },
+    { startedAt: "2026-10-03T10:00:00Z", qaScore: 70 },
+    { startedAt: "2026-10-01T10:00:00Z", qaScore: 50 },
+    { startedAt: "2026-10-02T10:00:00Z", qaScore: 60 },
   ];
-  assert.deepEqual(L.trendPoints(calls, 20), [5, 6, 7]);
-  assert.deepEqual(L.trendPoints(calls, 2), [6, 7]);
+  assert.deepEqual(L.trendPoints(calls, 20), [50, 60, 70]);
+  assert.deepEqual(L.trendPoints(calls, 2), [60, 70]);
 });
 
-test("sortScenarios puts the learner's level first, interviews first for job seekers", () => {
+test("sortScenarios: the learner's call types first, calm to furious; interviews by role", () => {
   const list = [
-    { id: "a2", difficulty: "A2", category: "support" },
-    { id: "b1", difficulty: "B1", category: "support" },
-    { id: "b2", difficulty: "B2", category: "support" },
-    { id: "iv", difficulty: "B2", category: "interview" },
+    { id: "s-fur", callType: "service", temperament: "furious" },
+    { id: "iv", callType: "interview", temperament: "demanding" },
+    { id: "t-calm", callType: "tech", temperament: "calm" },
+    { id: "s-calm", callType: "service", temperament: "calm" },
+    { id: "c-dem", callType: "collections", temperament: "demanding" },
   ];
   const ids = (p: unknown) => L.sortScenarios(list, p).map((s: { id: string }) => s.id);
-  assert.deepEqual(ids({ level: "B1", goal: "improve" }), ["b1", "a2", "b2", "iv"]);
-  assert.deepEqual(ids({ level: "B2", goal: "job" }), ["iv", "b2", "b1", "a2"]);
-  assert.deepEqual(ids(null), ["a2", "b1", "b2", "iv"]);
+  assert.deepEqual(ids({ role: "agent", interests: ["collections"] }), ["c-dem", "t-calm", "s-calm", "s-fur", "iv"]);
+  assert.deepEqual(ids({ role: "job_seeker", interests: [] }), ["iv", "t-calm", "s-calm", "c-dem", "s-fur"]);
+  assert.deepEqual(ids(null), ["t-calm", "s-calm", "c-dem", "s-fur", "iv"]);
+});
+
+test("markQuotes highlights coaching quotes inside a line, case-insensitive", () => {
+  const parts = L.markQuotes("Okay no problem, I can do that for you.", ['"No problem,"', "do that"]);
+  assert.deepEqual(parts, [
+    { text: "Okay ", hit: false },
+    { text: "no problem", hit: true },
+    { text: ", I can ", hit: false },
+    { text: "do that", hit: true },
+    { text: " for you.", hit: false },
+  ]);
+  assert.deepEqual(L.markQuotes("Hello there", ["missing", "ok"]), [{ text: "Hello there", hit: false }]);
 });
 
 test("formatTime pads minutes and seconds", () => {

@@ -1,6 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
+import { fileURLToPath } from "node:url";
 import { createApp } from "../app.js";
 import { userFromClaims, type Auth, type AuthUser } from "../auth.js";
 import { loadConfig } from "../config.js";
@@ -31,7 +32,7 @@ const app = createApp(
     config, catalog, store, llm, auth: fakeAuth,
     publicConfig: { supabaseUrl: "https://abc.supabase.co", supabaseKey: "sb_publishable_x" },
   },
-  { webDir: "." },
+  { siteDir: fileURLToPath(new URL("../../..", import.meta.url)) },
 );
 const server = app.listen(0, "127.0.0.1");
 await new Promise((r) => server.once("listening", r));
@@ -63,6 +64,13 @@ test("cors: the site can read the API and send the sign-in header; other origins
 
   const evil = await call("GET", "/scenarios", { origin: "https://evil.example" });
   assert.equal(evil.headers.get("access-control-allow-origin"), null);
+});
+
+test("site: the server serves the site pages only, never the rest of the repo", async () => {
+  for (const p of ["/", "/privacy.html", "/app/", "/web/"]) assert.equal((await fetch(base + p)).status, 200, p);
+  for (const p of ["/package.json", "/server/.env.example", "/README.md", "/app/../package.json"]) {
+    assert.equal((await fetch(base + p)).status, 404, p);
+  }
 });
 
 test("public: /config and /scenarios need no sign-in", async () => {
@@ -122,6 +130,9 @@ test("flow: a call, its scorecard, then history and the review with transcript",
   assert.equal(list.length, 1);
   assert.equal(list[0].title, "Internet not working");
   assert.equal(list[0].qaScore, 60);
+  const skills = (await call("GET", "/calls", { token: "ana-token" })).data.skills;
+  assert.equal(skills.length, 8);
+  assert.deepEqual(skills[0], { key: "opening", label: "Opening", avg: 6, n: 1 });
   const detail = (await call("GET", `/calls/${id}`, { token: "ana-token" })).data;
   assert.equal(detail.feedback.qaScore, 60);
   assert.equal(detail.feedback.criteria[0].label, "Opening");

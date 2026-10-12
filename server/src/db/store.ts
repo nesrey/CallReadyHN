@@ -79,6 +79,13 @@ export interface UsageRow {
   qa: number | null;
 }
 
+/** Average score (0-10) per scorecard item across a learner's customer calls (interviews excluded). */
+export interface SkillAverage {
+  key: string;
+  avg: number;
+  n: number;
+}
+
 export function proActive(p: Pick<Profile, "isPro" | "proUntil">, now: Date): boolean {
   return p.isPro && (p.proUntil === null || p.proUntil.getTime() > now.getTime());
 }
@@ -110,6 +117,7 @@ export interface Store {
   saveFeedback(callId: string, durationSec: number, qaScore: number, f: FeedbackOutput, transcript: Message[]): Promise<boolean>;
   getCallDetail(userId: string, callId: string): Promise<CallDetail | null>;
   listCalls(userId: string, limit: number): Promise<CallSummary[]>;
+  skillAverages(userId: string): Promise<SkillAverage[]>;
 
   listUsers(opts: { query: string; limit: number; offset: number }): Promise<{ users: AdminUser[]; total: number }>;
   setPro(userId: string, isPro: boolean, proUntil: Date | null): Promise<boolean>;
