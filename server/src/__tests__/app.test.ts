@@ -165,6 +165,24 @@ test("admin: only listed emails; users, Pro, usage", async () => {
   assert.ok(usage.totals.tokens > 0);
 });
 
+test("admin: overview has headline numbers, 14 days, recent calls, new users and top scenarios", async () => {
+  assert.equal((await call("GET", "/admin/overview", { token: "ana-token" })).status, 403);
+  const o = (await call("GET", "/admin/overview", { token: "boss-token" })).data;
+  assert.equal(o.totals.users, 2);
+  assert.equal(o.totals.newUsers7d, 2);
+  assert.equal(o.totals.callsToday, 1);
+  assert.equal(o.totals.calls7d, 1);
+  assert.equal(o.totals.avgQa7d, 60);
+  assert.ok(o.totals.tokens7d > 0);
+  assert.equal(o.byDay.length, 14);
+  assert.equal(o.recentCalls.length, 1);
+  assert.equal(o.recentCalls[0].email, "ana@example.com");
+  assert.equal(o.recentCalls[0].title, "Internet not working");
+  assert.equal(o.recentCalls[0].qaScore, 60);
+  assert.deepEqual(o.newUsers.map((u: { email: string }) => u.email).sort(), ["ana@example.com", "boss@example.com"]);
+  assert.deepEqual(o.topScenarios, [{ title: "Internet not working", callType: "tech", calls: 1 }]);
+});
+
 test("admin: scenarios are validated, saved, and toggled", async () => {
   const list = (await call("GET", "/admin/scenarios", { token: "boss-token" })).data.scenarios;
   const s = list.find((x: { id: string }) => x.id === "tech-wifi-down");

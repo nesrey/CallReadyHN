@@ -49,6 +49,39 @@ export async function adminSetPro(deps: Deps, userId: string, body: unknown) {
   return { ok: true, isPro: b.isPro, proUntil: iso(until) };
 }
 
+/** The admin home: headline numbers, calls per day (14 days), latest activity, most-practiced scenarios. */
+export async function adminOverview(deps: Deps) {
+  const now = nowOf(deps);
+  const tz = deps.config.timeZone;
+  const week = startOfRange(now, tz, 7);
+  const [counts, rows14, recent, users, top] = await Promise.all([
+    deps.store.overviewCounts(week, now),
+    deps.store.usageSince(startOfRange(now, tz, 14)),
+    deps.store.recentCalls(8),
+    deps.store.recentUsers(5),
+    deps.store.topScenarios(startOfRange(now, tz, 30), 5),
+  ]);
+  const byDay = aggregateUsage(rows14, now, tz, 14);
+  const week7 = rows14.filter((r) => r.startedAt >= week);
+  const scored = week7.filter((r) => r.qa !== null);
+  return {
+    timeZone: tz,
+    totals: {
+      users: counts.users,
+      newUsers7d: counts.newUsers,
+      proUsers: counts.proUsers,
+      callsToday: byDay[0]?.calls ?? 0,
+      calls7d: week7.length,
+      avgQa7d: scored.length ? Math.round(scored.reduce((a, r) => a + (r.qa as number), 0) / scored.length) : null,
+      tokens7d: week7.reduce((a, r) => a + r.tokens, 0),
+    },
+    byDay,
+    recentCalls: recent.map((c) => ({ ...c, startedAt: c.startedAt.toISOString() })),
+    newUsers: users.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })),
+    topScenarios: top,
+  };
+}
+
 export async function adminUsage(deps: Deps, query: Record<string, unknown>) {
   const days = Math.min(90, Math.max(1, Number.parseInt(String(query.days ?? "30"), 10) || 30));
   const now = nowOf(deps);

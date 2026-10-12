@@ -435,7 +435,7 @@ details.review[open] summary h2::after{content:" ▾"}
   .frame{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:100vh}
   .frame>main{padding:28px 40px 56px;max-width:1240px;width:100%}
   .frame.narrow>main{max-width:820px}
-  body.wide #app{max-width:1240px;padding:0 40px 56px}
+  body.wide #app{max-width:none;padding:0}
   .tabs{display:none}
   .side{display:flex;flex-direction:column;gap:8px;position:sticky;top:0;height:100vh;padding:26px 18px;background:rgba(255,255,255,.75);
     backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-right:1px solid var(--line)}
@@ -472,6 +472,38 @@ details.review[open] summary h2::after{content:" ▾"}
 @media (min-width:1440px){
   .frame{grid-template-columns:280px minmax(0,1fr)}
   .frame>main{padding:32px 56px 64px}
+}
+
+/* admin dashboard */
+.side-label{margin:14px 0 4px;padding:0 12px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8A99A8}
+.side-out{display:flex;align-items:center;gap:12px;margin-top:auto;padding:11px 12px;border:0;border-radius:12px;background:none;color:var(--muted);font-weight:600;text-align:left}
+.side-out:hover{background:#F6EAEA;color:var(--bad)}
+.stats.kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.stats.kpis .stat .si{background:var(--cobalt-50);color:var(--cobalt)}
+.stats.kpis .stat small{display:block;margin-top:2px;font-size:13px;color:var(--good);font-weight:600}
+.block-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
+.block-head h2{margin:0}
+.block-head .btn.link{font-size:14px}
+.card.list{padding:6px 8px}
+.act{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:10px 8px;border-bottom:1px solid var(--line)}
+.act:last-child{border-bottom:0}
+.act .sc-ico{width:40px;height:40px;border-radius:12px;align-self:center}
+.act .sc-ico svg{width:20px;height:20px}
+.act-main{display:grid;min-width:0}
+.act-main b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act-main .small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act .sc-n{min-width:46px;text-align:center;font-weight:700;padding:5px 9px;border-radius:11px;background:var(--cobalt-50);color:var(--cobalt-d)}
+.av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:linear-gradient(150deg,#2A5DAA,var(--night2));color:#fff}
+.frame.admin .hero .brand{display:none}
+.frame.admin .seg{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.frame.admin .seg::-webkit-scrollbar{display:none}
+.frame.admin .seg a{flex:none}
+@media (max-width:719px){ .stats.kpis .stat:last-child:nth-child(odd){grid-column:1/-1} }
+@media (min-width:720px){ .stats.kpis{grid-template-columns:repeat(3,minmax(0,1fr))} }
+@media (min-width:1024px){
+  .frame.admin .admin-top,.frame.admin .seg{display:none}
+  .stats.kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
+  .frame.admin .side{gap:4px}
 }
 
 @media (prefers-reduced-motion:reduce){
@@ -599,6 +631,16 @@ function markQuotes(text, quotes) {
   if (pos < text.length) out.push({ text: text.slice(pos), hit: false });
   return out;
 }
+// "just now", "5 min ago", "3 h ago", "2 days ago", then a date.
+function timeAgo(iso, now) {
+  const s = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + ' min ago';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+  const d = Math.floor(s / 86400);
+  if (d < 7) return d === 1 ? '1 day ago' : d + ' days ago';
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 /* LOGIC:END */
 
 /* ---------- helpers ---------- */
@@ -652,6 +694,7 @@ const I = {
   target: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>',
   send: '<svg class="i" viewBox="0 0 24 24"><path d="M5 12l14-7-5 15-3-6z"/></svg>',
   admin: '<svg class="i" viewBox="0 0 24 24"><path d="M4 21V10M4 6V3M12 21v-7M12 10V3M20 21v-5M20 12V3M2 10h4M10 10h4M18 12h4"/></svg>',
+  home: '<svg class="i" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>',
   desk: '<svg class="i" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
   google: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 0 1 0-4.4V7H2.1a11 11 0 0 0 0 10z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>',
 };
@@ -752,7 +795,8 @@ function shell(inner, active, width) {
     (me ? '<a class="side-plan" href="#/pro">' + (me.isPro ? I.star + '<span>Pro plan</span>' : I.star + '<span>Free plan · ' + Math.min(me.callsToday, me.freeDailyLimit) + ' of ' + me.freeDailyLimit + ' today</span>') + '</a>' +
       '<p class="side-user">' + esc(me.email) + '</p>' : '') + '</aside>';
   return '<div class="frame' + (width ? ' ' + width : '') + '">' + side + '<main>' + inner + '</main></div>' +
-    '<nav class="tabs" aria-label="Main"><div class="tabs-in">' + tabs.map(link).join('') + '</div></nav>';
+    '<nav class="tabs" aria-label="Main"><div class="tabs-in">' + tabs.map(link).join('') +
+    (me && me.isAdmin ? '<a href="#/admin">' + I.admin + '<span>Admin</span></a>' : '') + '</div></nav>';
 }
 function backHeader(title, href) {
   return '<header class="top"><a class="icon-btn" href="' + href + '" aria-label="Back">' + I.back + '</a><h1>' + esc(title) + '</h1></header>';
@@ -841,7 +885,7 @@ async function render() {
     case 'pro': return proView(r.q.get('why'));
     case 'results': return resultsView(r.arg, vid);
     case 'call': return callView(r.arg, vid);
-    case 'admin': return adminView(r.arg || 'users', r.arg2, vid);
+    case 'admin': return adminView(r.arg || 'overview', r.arg2, vid);
     default: return scenariosView(vid);
   }
 }
@@ -946,7 +990,8 @@ function onboardingView() {
   const choice = (sel, key, ico, t, d, attr) => '<button type="button" class="choice" data-' + attr + '="' + key + '" aria-pressed="' + sel + '">' +
     '<span class="ico" aria-hidden="true">' + ico + '</span><span><b>' + t + '</b><span class="d">' + d + '</span></span>' +
     '<span class="tick" aria-hidden="true">' + I.check + '</span></button>';
-  root().innerHTML = '<main class="solo">' + (first
+  const toAdmin = me.isAdmin ? '<a class="btn link" href="#/admin" style="display:inline-flex;margin:14px 0 0">' + I.back.replace('class="i"', 'class="i" style="width:16px;height:16px"') + 'Back to admin</a>' : '';
+  root().innerHTML = '<main class="solo">' + toAdmin + (first
     ? '<section class="hero">' + brandMark() + '<h1>Welcome to CallReady</h1><p class="sub">Two quick questions so we can line up the right calls for you.</p></section>'
     : backHeader('Role and focus', '#/settings')) +
     '<fieldset><legend>What describes you best?</legend><div class="choices three">' + roles.map((x) => choice(role === x[0], x[0], x[1], x[2], x[3], 'role')).join('') + '</div></fieldset>' +
@@ -1450,14 +1495,88 @@ function proView(why) {
 }
 
 /* ---------- admin ---------- */
-const ADMIN_TABS = [['users', 'Users'], ['usage', 'Usage'], ['scenarios', 'Scenarios'], ['settings', 'Settings']];
+const ADMIN_TABS = [['overview', 'Overview', 'home'], ['users', 'Users', 'user'], ['usage', 'Usage', 'chart'], ['scenarios', 'Scenarios', 'desk'], ['settings', 'Settings', 'gear']];
 
+// Admin pages: sidebar on desktop (admin sections + the learner view); header and section tabs on phones and tablets.
 function adminFrame(tab, inner) {
-  return '<main><header class="admin-top">' + brandMark().replace('CallReady</div>', 'CallReady <span class="muted" style="font-weight:600">· Admin</span></div>') +
-    '<a class="btn" href="#/scenarios">' + I.user.replace('class="i"', 'class="i" style="width:18px;height:18px;margin-right:6px"') + 'Practice as a learner</a>' +
+  const link = (t) => '<a href="#/admin/' + t[0] + '"' + (t[0] === tab ? ' aria-current="page"' : '') + '>' + I[t[2]] + '<span>' + t[1] + '</span></a>';
+  const side = '<aside class="side" aria-label="Admin">' + brandMark() +
+    '<p class="side-label">Admin</p><nav class="side-nav">' + ADMIN_TABS.map(link).join('') + '</nav>' +
+    '<p class="side-label">Learner view</p><nav class="side-nav"><a href="#/scenarios">' + I.phone + '<span>Practice calls</span></a>' +
+    '<a href="#/progress">' + I.target + '<span>My progress</span></a></nav>' +
+    '<button class="side-out" data-signout>' + I.logout + '<span>Sign out</span></button>' +
+    '<p class="side-user">' + esc(me.email) + '</p></aside>';
+  return '<div class="frame admin">' + side + '<main>' +
+    '<header class="admin-top">' + brandMark().replace('CallReady</div>', 'CallReady <span class="muted" style="font-weight:600">· Admin</span></div>') +
+    '<a class="btn" href="#/scenarios">' + I.phone.replace('class="i"', 'class="i" style="width:18px;height:18px;margin-right:6px"') + 'Practice calls</a>' +
     '<button class="btn" data-signout>Sign out</button></header>' +
     '<nav class="seg" aria-label="Sections">' + ADMIN_TABS.map((t) => '<a href="#/admin/' + t[0] + '"' + (t[0] === tab ? ' aria-current="page"' : '') + '>' + t[1] + '</a>').join('') + '</nav>' +
-    inner + '</main>';
+    inner + '</main></div>';
+}
+
+// Calls per day as columns, oldest on the left. One series, so no legend; values in the hover label and the table on Usage.
+function callsColumns(days) {
+  const n = days.length, W = n <= 7 ? 360 : 640, H = n <= 7 ? 190 : 210, pl = 30, pr = 6, pt = 22, pb = 30;
+  const max = Math.max(4, ...days.map((d) => d.calls));
+  const step = max <= 10 ? 2 : max <= 50 ? 10 : Math.ceil(max / 5 / 10) * 10;
+  const top = Math.ceil(max / step) * step;
+  const y = (v) => H - pb - v / top * (H - pt - pb);
+  const slot = (W - pl - pr) / n, bw = Math.min(26, slot * 0.62);
+  const grid = Array.from({ length: Math.floor(top / step) + 1 }, (_, i) => i * step).map((g) =>
+    '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(g) + '" y2="' + y(g) + '" stroke="#E1E7EE"/>' +
+    '<text x="' + (pl - 8) + '" y="' + (y(g) + 4) + '" text-anchor="end" font-size="11" fill="#5A6B7D">' + g + '</text>').join('');
+  const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const bars = days.map((d, i) => {
+    const x = pl + i * slot + (slot - bw) / 2, h = H - pb - y(d.calls), r = Math.min(4, h);
+    const label = fmt.format(new Date(d.day + 'T12:00:00Z'));
+    const shape = d.calls > 0
+      ? '<path d="M' + x + ',' + (H - pb) + 'V' + (y(d.calls) + r) + 'Q' + x + ',' + y(d.calls) + ' ' + (x + r) + ',' + y(d.calls) + 'H' + (x + bw - r) + 'Q' + (x + bw) + ',' + y(d.calls) + ' ' + (x + bw) + ',' + (y(d.calls) + r) + 'V' + (H - pb) + 'Z" fill="' + (i === n - 1 ? '#1556C0' : '#6E9BE0') + '"/>'
+      : '';
+    const tick = n <= 7 || (n - 1 - i) % 2 === 0 ? '<text x="' + (x + bw / 2) + '" y="' + (H - 10) + '" text-anchor="middle" font-size="11" fill="#5A6B7D">' + label + '</text>' : '';
+    // A full-height invisible hit area carries the hover label.
+    return shape + tick + '<rect x="' + (pl + i * slot) + '" y="' + pt + '" width="' + slot + '" height="' + (H - pt - pb) + '" fill="transparent"><title>' + label + ': ' + d.calls + (d.calls === 1 ? ' call' : ' calls') + '</title></rect>';
+  }).join('');
+  const today = days[n - 1];
+  const todayLabel = today && today.calls > 0 ? '<text x="' + (pl + (n - 1) * slot + slot / 2) + '" y="' + (y(today.calls) - 7) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#0F2438">' + today.calls + '</text>' : '';
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Calls per day for the last ' + n + ' days. Today: ' + (today ? today.calls : 0) + '.">' + grid + bars + todayLabel + '</svg>';
+}
+
+async function adminOverviewView(vid) {
+  const o = await api('/admin/overview');
+  if (vid !== viewId) return;
+  const t = o.totals;
+  const n = (x) => Number(x).toLocaleString('en-US');
+  const tile = (ico, value, label, sub) => '<div class="stat"><span class="si" aria-hidden="true">' + I[ico] + '</span><b>' + value + '</b><span>' + label + '</span>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>';
+  // Phones get the last week so the columns stay readable.
+  const days = o.byDay.slice(0, window.innerWidth < 600 ? 7 : 14).reverse();
+  const recent = o.recentCalls.length
+    ? o.recentCalls.map((c) => '<div class="act">' + catIcon(c.callType) + '<span class="act-main"><b>' + esc(c.title) + '</b><span class="muted small">' + esc(c.email) + ' · ' + esc(timeAgo(c.startedAt, new Date())) + '</span></span>' +
+      (c.qaScore === null ? '<span class="pill">No score</span>' : '<span class="sc-n">' + c.qaScore + '</span>') + '</div>').join('')
+    : '<p class="muted">No calls yet. They show up here as soon as someone practices.</p>';
+  const users = o.newUsers.length
+    ? o.newUsers.map((u) => '<div class="act"><span class="av" aria-hidden="true">' + esc(u.email.slice(0, 1).toUpperCase()) + '</span><span class="act-main"><b>' + esc(u.email) + '</b><span class="muted small">' + (u.role ? esc(ROLE_NAMES[u.role]) + ' · ' : '') + 'joined ' + esc(timeAgo(u.createdAt, new Date())) + '</span></span></div>').join('')
+    : '<p class="muted">No users yet.</p>';
+  const topMax = Math.max(1, ...o.topScenarios.map((s) => s.calls));
+  const top = o.topScenarios.length
+    ? o.topScenarios.map((s) => '<div class="score"><span>' + esc(s.title) + '</span><span class="meter" role="img" aria-label="' + esc(s.title) + ': ' + s.calls + ' calls"><i style="width:' + (s.calls / topMax * 100) + '%"></i></span><b>' + s.calls + '</b></div>').join('')
+    : '<p class="muted">No calls in the last 30 days.</p>';
+
+  root().innerHTML = adminFrame('overview',
+    '<section class="hero"><h1>Overview</h1><p class="sub">How CallReady is doing. Numbers cover the last 7 days unless noted; days follow ' + esc(o.timeZone) + ' time.</p>' +
+    '<div class="pillbar">' + I.phone + n(t.callsToday) + (t.callsToday === 1 ? ' call' : ' calls') + ' today</div></section>' +
+    '<div class="stats kpis">' +
+    tile('user', n(t.users), 'Users', '+' + n(t.newUsers7d) + ' this week') +
+    tile('star', n(t.proUsers), 'Pro users', t.users ? Math.round(t.proUsers / t.users * 100) + '% of users' : '') +
+    tile('phone', n(t.calls7d), 'Calls', 'last 7 days') +
+    tile('trophy', t.avgQa7d === null ? '—' : t.avgQa7d, 'Average QA', 'last 7 days') +
+    tile('chart', n(t.tokens7d), 'AI tokens', 'last 7 days') +
+    '</div>' +
+    '<section class="block"><div class="block-head"><h2>Calls per day <span class="muted small" style="font-family:var(--body);font-weight:500">last ' + days.length + ' days</span></h2><a class="btn link" href="#/admin/usage">See the table</a></div><div class="chart">' + callsColumns(days) + '</div></section>' +
+    '<div class="cols">' +
+    '<section class="block"><div class="block-head"><h2>Recent calls</h2></div><div class="card list">' + recent + '</div></section>' +
+    '<div><section class="block"><div class="block-head"><h2>New users</h2><a class="btn link" href="#/admin/users">All users</a></div><div class="card list">' + users + '</div></section>' +
+    '<section class="block"><h2>Most practiced</h2><p class="section-sub">Last 30 days</p><div class="card scores">' + top + '</div></section></div>' +
+    '</div>');
 }
 
 async function adminView(tab, arg, vid) {
@@ -1477,11 +1596,12 @@ async function adminView(tab, arg, vid) {
     $('#retry').addEventListener('click', render);
   };
   try {
+    if (tab === 'users') return await adminUsersView(vid);
     if (tab === 'usage') return await adminUsageView(vid);
     if (tab === 'scenarios') return await adminScenariosView(vid);
     if (tab === 'scenario') return await adminScenarioEdit(arg, vid);
     if (tab === 'settings') return await adminSettingsView(vid);
-    return await adminUsersView(vid);
+    return await adminOverviewView(vid);
   } catch (e) { fail(e); }
 }
 

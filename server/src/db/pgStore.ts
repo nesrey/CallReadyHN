@@ -3,7 +3,8 @@ import type { CallType, Scenario, Temperament, Tier } from "../scenarios/load.js
 import type { Message } from "../types.js";
 import { DB, SCHEMA_SQL } from "./schema.js";
 import type {
-  AdminUser, CallDetail, CallRow, CallSummary, Profile, Role, Settings, SkillAverage, Store, StoredScenario, UsageRow,
+  AdminUser, CallDetail, CallRow, CallSummary, OverviewCounts, Profile, RecentCall, RecentUser, Role, ScenarioCount, Settings,
+  SkillAverage, Store, StoredScenario, UsageRow,
 } from "./store.js";
 
 /** The part of node-postgres' Pool (and PGlite, used in tests) this store needs. */
@@ -345,6 +346,59 @@ export class PgStore implements Store {
       [userId, isPro, isPro ? proUntil : null],
     );
     return rows.length > 0;
+  }
+
+  async overviewCounts(newSince: Date, now: Date): Promise<OverviewCounts> {
+    const { rows } = await this.db.query(
+      `select count(*) as users,
+              count(*) filter (where created_at >= $1) as new_users,
+              count(*) filter (where is_pro and (pro_until is null or pro_until > $2)) as pro_users
+       from ${DB}.profiles`,
+      [newSince, now],
+    );
+    const r = rows[0] ?? {};
+    return { users: num(r.users), newUsers: num(r.new_users), proUsers: num(r.pro_users) };
+  }
+
+  async recentCalls(limit: number): Promise<RecentCall[]> {
+    const { rows } = await this.db.query(
+      `select p.email, s.title, s.call_type, s.temperament, c.started_at, c.qa_score
+       from ${DB}.calls c
+       join ${DB}.profiles p on p.user_id = c.user_id
+       join ${DB}.scenarios s on s.id = c.scenario_id
+       where c.turns > 0
+       order by c.started_at desc limit $1`,
+      [limit],
+    );
+    return rows.map((r) => ({
+      email: String(r.email),
+      title: String(r.title),
+      callType: r.call_type as CallType,
+      temperament: r.temperament as Temperament,
+      startedAt: date(r.started_at),
+      qaScore: numOrNull(r.qa_score),
+    }));
+  }
+
+  async recentUsers(limit: number): Promise<RecentUser[]> {
+    const { rows } = await this.db.query(
+      `select email, role, created_at from ${DB}.profiles order by created_at desc limit $1`,
+      [limit],
+    );
+    return rows.map((r) => ({ email: String(r.email), role: (r.role as Role | null) ?? null, createdAt: date(r.created_at) }));
+  }
+
+  async topScenarios(since: Date, limit: number): Promise<ScenarioCount[]> {
+    const { rows } = await this.db.query(
+      `select s.title, s.call_type, count(*) as calls
+       from ${DB}.calls c join ${DB}.scenarios s on s.id = c.scenario_id
+       where c.started_at >= $1 and c.turns > 0
+       group by s.id, s.title, s.call_type
+       order by count(*) desc, s.title
+       limit $2`,
+      [since, limit],
+    );
+    return rows.map((r) => ({ title: String(r.title), callType: r.call_type as CallType, calls: num(r.calls) }));
   }
 
   async usageSince(since: Date): Promise<UsageRow[]> {

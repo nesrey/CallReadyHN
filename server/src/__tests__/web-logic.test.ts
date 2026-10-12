@@ -9,7 +9,7 @@ assert.ok(block, "LOGIC markers not found in app/index.html");
 
 const L = new Function(
   `${block.slice(block.indexOf("*/") + 2)}
-   return { computeStreak, canStartCall, sortScenarios, formatTime, trendPoints, dateKey, freeUsedText, verdict, markQuotes };`,
+   return { computeStreak, canStartCall, sortScenarios, formatTime, trendPoints, dateKey, freeUsedText, verdict, markQuotes, timeAgo };`,
 )() as Record<string, any>;
 
 const d = (s: string) => new Date(s); // local-time dates, e.g. "2026-10-11T12:00:00"
@@ -122,4 +122,14 @@ test("formatTime pads minutes and seconds", () => {
   assert.equal(L.formatTime(0), "00:00");
   assert.equal(L.formatTime(65), "01:05");
   assert.equal(L.formatTime(-5), "00:00");
+});
+
+test("timeAgo says how long ago, then falls back to a date", () => {
+  const now = new Date("2026-10-11T18:00:00Z");
+  assert.equal(L.timeAgo("2026-10-11T17:59:30Z", now), "just now");
+  assert.equal(L.timeAgo("2026-10-11T17:55:00Z", now), "5 min ago");
+  assert.equal(L.timeAgo("2026-10-11T15:00:00Z", now), "3 h ago");
+  assert.equal(L.timeAgo("2026-10-10T17:00:00Z", now), "1 day ago");
+  assert.equal(L.timeAgo("2026-10-08T18:00:00Z", now), "3 days ago");
+  assert.match(L.timeAgo("2026-09-20T18:00:00Z", now), /Sep 20/);
 });

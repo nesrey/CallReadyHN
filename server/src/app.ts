@@ -2,7 +2,7 @@ import { join } from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { getMe, getMyCall, isAdmin, listMyCalls, updateMe } from "./account.js";
 import {
-  adminGetSettings, adminListScenarios, adminListUsers, adminSaveScenario, adminSaveSettings, adminSetPro,
+  adminGetSettings, adminListScenarios, adminListUsers, adminOverview, adminSaveScenario, adminSaveSettings, adminSetPro,
   adminSetScenarioEnabled, adminUsage,
 } from "./admin.js";
 import type { Auth, AuthUser } from "./auth.js";
@@ -115,6 +115,7 @@ export function createApp(deps: AppDeps, opts: { siteDir: string }) {
   const admin = [requireUser, requireAdmin];
   app.get("/admin/users", ...admin, json((req) => adminListUsers(deps, req.query as Record<string, unknown>)));
   app.post("/admin/users/:id/pro", ...admin, json((req) => adminSetPro(deps, String(req.params.id), req.body)));
+  app.get("/admin/overview", ...admin, json(() => adminOverview(deps)));
   app.get("/admin/usage", ...admin, json((req) => adminUsage(deps, req.query as Record<string, unknown>)));
   app.get("/admin/scenarios", ...admin, json(async () => adminListScenarios(deps)));
   app.put("/admin/scenarios/:id", ...admin, json((req) => adminSaveScenario(deps, String(req.params.id), req.body)));

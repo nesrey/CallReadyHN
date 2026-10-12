@@ -86,6 +86,32 @@ export interface SkillAverage {
   n: number;
 }
 
+/** Admin overview: counts and the latest activity. */
+export interface OverviewCounts {
+  users: number;
+  newUsers: number;
+  proUsers: number;
+}
+export interface RecentCall {
+  email: string;
+  title: string;
+  callType: CallType;
+  temperament: Temperament;
+  startedAt: Date;
+  /** null while the call has no scorecard (abandoned or in progress). */
+  qaScore: number | null;
+}
+export interface RecentUser {
+  email: string;
+  role: Role | null;
+  createdAt: Date;
+}
+export interface ScenarioCount {
+  title: string;
+  callType: CallType;
+  calls: number;
+}
+
 export function proActive(p: Pick<Profile, "isPro" | "proUntil">, now: Date): boolean {
   return p.isPro && (p.proUntil === null || p.proUntil.getTime() > now.getTime());
 }
@@ -122,4 +148,9 @@ export interface Store {
   listUsers(opts: { query: string; limit: number; offset: number }): Promise<{ users: AdminUser[]; total: number }>;
   setPro(userId: string, isPro: boolean, proUntil: Date | null): Promise<boolean>;
   usageSince(since: Date): Promise<UsageRow[]>;
+  /** newUsers: signed up at or after newSince; proUsers: Pro active at `now`. */
+  overviewCounts(newSince: Date, now: Date): Promise<OverviewCounts>;
+  recentCalls(limit: number): Promise<RecentCall[]>;
+  recentUsers(limit: number): Promise<RecentUser[]>;
+  topScenarios(since: Date, limit: number): Promise<ScenarioCount[]>;
 }
