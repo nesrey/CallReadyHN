@@ -56,7 +56,7 @@ publishable key, which are public by design). The server refuses to start if a r
 | `DATABASE_URL` | (required) | Supabase **Session pooler** connection string (see section 3) |
 | `DATABASE_SSL_CA` | | Supabase's root certificate (PEM text). When set, the database certificate is verified |
 | `SUPABASE_JWT_SECRET` | | Only for older Supabase projects that still sign tokens with a shared secret |
-| `ADMIN_EMAILS` | `nesrey@gmail.com` | Comma-separated emails that may open the admin page |
+| `ADMIN_EMAILS` | (none) | Comma-separated emails that may open the admin page. Set it only in `.env` / Render, never in code |
 | `TIMEZONE` | `America/Tegucigalpa` | Where "today" starts for the free daily limit and the usage view |
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | Use `HOST=0.0.0.0` on Render |
 | `ALLOWED_ORIGINS` | (empty) | Sites allowed to call the API from a browser, e.g. `https://callreadyhn.com` |

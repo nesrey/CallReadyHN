@@ -17,7 +17,7 @@ test("config: ALLOWED_ORIGINS parsing", () => {
 
 test("config: admins and time zone", () => {
   const c = loadConfig({ ANTHROPIC_API_KEY: "k" });
-  assert.deepEqual(c.adminEmails, ["nesrey@gmail.com"]);
+  assert.deepEqual(c.adminEmails, [], "no admins unless ADMIN_EMAILS is set");
   assert.equal(c.timeZone, "America/Tegucigalpa");
   const d = loadConfig({ ANTHROPIC_API_KEY: "k", ADMIN_EMAILS: " A@X.com, b@y.com ,", TIMEZONE: "America/New_York" });
   assert.deepEqual(d.adminEmails, ["a@x.com", "b@y.com"]);

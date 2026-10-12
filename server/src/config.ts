@@ -133,7 +133,7 @@ export function loadConfig(env: Env): Config {
     maxHistory: 24,
     maxChars: 500,
     allowedOrigins: origins(env),
-    adminEmails: (env.ADMIN_EMAILS ?? "nesrey@gmail.com")
+    adminEmails: (env.ADMIN_EMAILS ?? "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
