@@ -1,5 +1,6 @@
 import { ApiError } from "../errors.js";
 import type { LlmClient, LlmMessage } from "../types.js";
+import type { Criterion } from "./rubric.js";
 
 export class ParseError extends Error {
   constructor(message: string) {
@@ -8,28 +9,33 @@ export class ParseError extends Error {
   }
 }
 
-export const SCORE_KEYS = ["fluency", "grammar", "vocabulary", "empathyPoliteness", "callFlow"] as const;
-export type ScoreKey = (typeof SCORE_KEYS)[number];
-
 export interface TurnOutput {
   line: string;
   end: boolean;
 }
-export interface Correction {
+/** One scorecard line as the model returns it (score 0-10, with a quote and a tip). */
+export interface CriterionResult {
+  key: string;
+  score: number;
+  evidence: string;
+  tip: string;
+}
+export interface Moment {
   said: string;
   better: string;
-  explanationEs: string;
+  why: string;
 }
 export interface Phrase {
   phrase: string;
-  meaningEs: string;
-  whenToUseEs: string;
+  whenToUse: string;
 }
 export interface FeedbackOutput {
-  scores: Record<ScoreKey, number>;
-  corrections: Correction[];
+  /** In rubric order. */
+  criteria: CriterionResult[];
+  strengths: string[];
+  moments: Moment[];
   phrases: Phrase[];
-  overallSummaryEs: string;
+  summary: string;
 }
 
 type Rec = Record<string, unknown>;
@@ -68,53 +74,53 @@ export function parseTurnOutput(text: string): TurnOutput {
   return { line, end: raw.end === true };
 }
 
-function parseScore(v: unknown, key: string): number {
-  if (typeof v !== "number" || !Number.isFinite(v)) {
-    throw new ParseError(`scores.${key} must be a number`);
-  }
-  const n = Math.round(v);
-  if (n < 1 || n > 10) throw new ParseError(`scores.${key} must be between 1 and 10`);
-  return n;
+function list(raw: Rec, key: string, min: number, max: number): unknown[] {
+  const v = raw[key];
+  if (!Array.isArray(v) || v.length < min) throw new ParseError(`output.${key} must be a list with at least ${min} item(s)`);
+  return v.slice(0, max);
 }
 
-export function parseFeedbackOutput(text: string): FeedbackOutput {
+/** Validate the grader's JSON against the rubric for this call type. */
+export function parseFeedbackOutput(text: string, rubric: readonly Criterion[]): FeedbackOutput {
   const raw = extractJson(text);
   if (!isRec(raw)) throw new ParseError("Output must be a JSON object");
+  if (!isRec(raw.criteria)) throw new ParseError("output.criteria must be an object");
+  const crit = raw.criteria;
 
-  if (!isRec(raw.scores)) throw new ParseError("output.scores must be an object");
-  const scores = {} as Record<ScoreKey, number>;
-  for (const k of SCORE_KEYS) scores[k] = parseScore(raw.scores[k], k);
-
-  if (!Array.isArray(raw.corrections) || raw.corrections.length !== 3) {
-    throw new ParseError("output.corrections must contain exactly 3 items");
-  }
-  const corrections = raw.corrections.map((c: unknown, i: number): Correction => {
-    if (!isRec(c)) throw new ParseError(`corrections[${i}] must be an object`);
+  const criteria = rubric.map((c): CriterionResult => {
+    const r = crit[c.key];
+    if (!isRec(r)) throw new ParseError(`criteria.${c.key} is missing`);
+    const s = r.score;
+    if (typeof s !== "number" || !Number.isFinite(s)) throw new ParseError(`criteria.${c.key}.score must be a number`);
+    const score = Math.round(s);
+    if (score < 0 || score > 10) throw new ParseError(`criteria.${c.key}.score must be between 0 and 10`);
     return {
-      said: nonEmpty(c, "said", `corrections[${i}]`),
-      better: nonEmpty(c, "better", `corrections[${i}]`),
-      explanationEs: nonEmpty(c, "explanationEs", `corrections[${i}]`),
+      key: c.key,
+      score,
+      evidence: nonEmpty(r, "evidence", `criteria.${c.key}`),
+      tip: nonEmpty(r, "tip", `criteria.${c.key}`),
     };
   });
 
-  if (!Array.isArray(raw.phrases) || raw.phrases.length !== 3) {
-    throw new ParseError("output.phrases must contain exactly 3 items");
-  }
-  const phrases = raw.phrases.map((p: unknown, i: number): Phrase => {
+  const strengths = list(raw, "strengths", 1, 3).map((s, i) => {
+    if (typeof s !== "string" || !s.trim()) throw new ParseError(`strengths[${i}] must be a non-empty string`);
+    return s.trim();
+  });
+  const moments = list(raw, "moments", 1, 3).map((m, i): Moment => {
+    if (!isRec(m)) throw new ParseError(`moments[${i}] must be an object`);
+    return { said: nonEmpty(m, "said", `moments[${i}]`), better: nonEmpty(m, "better", `moments[${i}]`), why: nonEmpty(m, "why", `moments[${i}]`) };
+  });
+  const phrases = list(raw, "phrases", 1, 3).map((p, i): Phrase => {
     if (!isRec(p)) throw new ParseError(`phrases[${i}] must be an object`);
-    return {
-      phrase: nonEmpty(p, "phrase", `phrases[${i}]`),
-      meaningEs: nonEmpty(p, "meaningEs", `phrases[${i}]`),
-      whenToUseEs: nonEmpty(p, "whenToUseEs", `phrases[${i}]`),
-    };
+    return { phrase: nonEmpty(p, "phrase", `phrases[${i}]`), whenToUse: nonEmpty(p, "whenToUse", `phrases[${i}]`) };
   });
 
-  const summary = raw.overallSummaryEs;
   return {
-    scores,
-    corrections,
+    criteria,
+    strengths,
+    moments,
     phrases,
-    overallSummaryEs: typeof summary === "string" ? summary.trim() : "",
+    summary: typeof raw.summary === "string" ? raw.summary.trim() : "",
   };
 }
 

@@ -1,40 +1,59 @@
 import { readFileSync } from "node:fs";
 
-export const DIFFICULTIES = ["A2", "B1", "B2"] as const;
+export const CALL_TYPES = ["service", "tech", "sales", "collections", "interview"] as const;
+export const TEMPERAMENTS = ["calm", "demanding", "furious"] as const;
 export const TIERS = ["free", "pro"] as const;
-export const CATEGORIES = ["support", "sales", "interview"] as const;
-export const AI_ROLES = ["customer", "interviewer"] as const;
 
-export type Difficulty = (typeof DIFFICULTIES)[number];
+export type CallType = (typeof CALL_TYPES)[number];
+export type Temperament = (typeof TEMPERAMENTS)[number];
 export type Tier = (typeof TIERS)[number];
-export type Category = (typeof CATEGORIES)[number];
-export type AiRole = (typeof AI_ROLES)[number];
+export type AiRole = "customer" | "interviewer";
+
+/** One line of the agent's desk panel, e.g. { label: "Plan", value: "Fiber 300, $65/month" }. */
+export interface DeskField {
+  label: string;
+  value: string;
+}
 
 export interface Scenario {
   id: string;
-  title: { es: string; en: string };
-  summaryEs: string;
-  difficulty: Difficulty;
+  title: string;
+  /** Shown to the learner on the scenario card. */
+  summary: string;
+  callType: CallType;
+  temperament: Temperament;
   tier: Tier;
-  category: Category;
-  aiRole: AiRole;
-  persona: { name: string; background: string; mood: string; speechStyle: string };
+  /** The (fictional) company the agent works for. */
+  company: string;
+  persona: { name: string; background: string; speechStyle: string };
+  /** What the caller wants from this call. */
   goal: string;
+  /** Agent-visible: the customer account (or, for interviews, the job posting). */
+  account: DeskField[];
+  /** Agent-visible: the rules the agent must follow. The grader checks resolutions against them. */
+  policies: string[];
+  /** Caller-only: revealed when the agent asks. */
   hiddenFacts: string[];
-  expectedFlow: string[];
-  difficultyNotes: string;
+  /** Extra direction for how the caller behaves. */
+  behaviorNotes: string;
 }
 
+/** What the page receives: everything the agent may see, never the caller-only facts. */
 export interface ScenarioSummary {
   id: string;
-  title: { es: string; en: string };
-  summaryEs: string;
-  difficulty: Difficulty;
+  title: string;
+  summary: string;
+  callType: CallType;
+  temperament: Temperament;
   tier: Tier;
-  category: Category;
   aiRole: AiRole;
+  company: string;
   personaName: string;
+  account: DeskField[];
+  policies: string[];
 }
+
+export const aiRoleOf = (s: Pick<Scenario, "callType">): AiRole => (s.callType === "interview" ? "interviewer" : "customer");
 
 export class ScenarioError extends Error {
   constructor(message: string) {
@@ -44,7 +63,6 @@ export class ScenarioError extends Error {
 }
 
 type Rec = Record<string, unknown>;
-
 const isRec = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v);
 
 function noUnknownKeys(obj: Rec, allowed: readonly string[], where: string): void {
@@ -64,7 +82,7 @@ function str(obj: Rec, key: string, where: string): string {
 function strArray(obj: Rec, key: string, where: string, minLen: number): string[] {
   const v = obj[key];
   if (!Array.isArray(v) || v.length < minLen) {
-    throw new ScenarioError(`${where}: "${key}" must be an array with at least ${minLen} item(s)`);
+    throw new ScenarioError(`${where}: "${key}" must be a list with at least ${minLen} item(s)`);
   }
   return v.map((x, i) => {
     if (typeof x !== "string" || x.trim() === "") {
@@ -83,8 +101,8 @@ function oneOf<T extends string>(obj: Rec, key: string, options: readonly T[], w
 }
 
 const TOP_KEYS = [
-  "id", "title", "summaryEs", "difficulty", "tier", "category", "aiRole",
-  "persona", "goal", "hiddenFacts", "expectedFlow", "difficultyNotes",
+  "id", "title", "summary", "callType", "temperament", "tier", "company", "persona", "goal",
+  "account", "policies", "hiddenFacts", "behaviorNotes",
 ] as const;
 
 export function validateScenario(raw: unknown, where = "scenario"): Scenario {
@@ -96,42 +114,41 @@ export function validateScenario(raw: unknown, where = "scenario"): Scenario {
   }
   noUnknownKeys(raw, TOP_KEYS, w);
 
-  const title = raw.title;
-  if (!isRec(title)) throw new ScenarioError(`${w}: "title" must be an object with es and en`);
-  noUnknownKeys(title, ["es", "en"], `${w}.title`);
-
   const persona = raw.persona;
   if (!isRec(persona)) throw new ScenarioError(`${w}: "persona" must be an object`);
-  noUnknownKeys(persona, ["name", "background", "mood", "speechStyle"], `${w}.persona`);
+  noUnknownKeys(persona, ["name", "background", "speechStyle"], `${w}.persona`);
 
-  const difficulty = oneOf(raw, "difficulty", DIFFICULTIES, w);
-  const category = oneOf(raw, "category", CATEGORIES, w);
-  const defaultTier: Tier = difficulty === "B2" || category === "interview" ? "pro" : "free";
-  const tier = raw.tier === undefined ? defaultTier : oneOf(raw, "tier", TIERS, w);
-  const aiRole: AiRole =
-    raw.aiRole === undefined
-      ? category === "interview" ? "interviewer" : "customer"
-      : oneOf(raw, "aiRole", AI_ROLES, w);
+  if (!Array.isArray(raw.account) || raw.account.length < 2) {
+    throw new ScenarioError(`${w}: "account" must be a list with at least 2 fields`);
+  }
+  const account = raw.account.map((f: unknown, i: number): DeskField => {
+    if (!isRec(f)) throw new ScenarioError(`${w}: "account[${i}]" must be { label, value }`);
+    noUnknownKeys(f, ["label", "value"], `${w}.account[${i}]`);
+    return { label: str(f, "label", `${w}.account[${i}]`), value: str(f, "value", `${w}.account[${i}]`) };
+  });
+
+  const callType = oneOf(raw, "callType", CALL_TYPES, w);
+  const temperament = oneOf(raw, "temperament", TEMPERAMENTS, w);
+  const defaultTier: Tier = temperament === "calm" && callType !== "interview" ? "free" : "pro";
 
   return {
     id,
-    title: { es: str(title, "es", `${w}.title`), en: str(title, "en", `${w}.title`) },
-    summaryEs: str(raw, "summaryEs", w),
-    difficulty,
-    tier,
-    category,
-    aiRole,
+    title: str(raw, "title", w),
+    summary: str(raw, "summary", w),
+    callType,
+    temperament,
+    tier: raw.tier === undefined ? defaultTier : oneOf(raw, "tier", TIERS, w),
+    company: str(raw, "company", w),
     persona: {
       name: str(persona, "name", `${w}.persona`),
       background: str(persona, "background", `${w}.persona`),
-      mood: str(persona, "mood", `${w}.persona`),
       speechStyle: str(persona, "speechStyle", `${w}.persona`),
     },
     goal: str(raw, "goal", w),
+    account,
+    policies: strArray(raw, "policies", w, 1),
     hiddenFacts: strArray(raw, "hiddenFacts", w, 0),
-    expectedFlow: strArray(raw, "expectedFlow", w, 3),
-    difficultyNotes:
-      raw.difficultyNotes === undefined ? "" : str(raw, "difficultyNotes", w),
+    behaviorNotes: raw.behaviorNotes === undefined ? "" : str(raw, "behaviorNotes", w),
   };
 }
 
@@ -164,11 +181,14 @@ export function toSummary(s: Scenario): ScenarioSummary {
   return {
     id: s.id,
     title: s.title,
-    summaryEs: s.summaryEs,
-    difficulty: s.difficulty,
+    summary: s.summary,
+    callType: s.callType,
+    temperament: s.temperament,
     tier: s.tier,
-    category: s.category,
-    aiRole: s.aiRole,
+    aiRole: aiRoleOf(s),
+    company: s.company,
     personaName: s.persona.name,
+    account: s.account,
+    policies: s.policies,
   };
 }

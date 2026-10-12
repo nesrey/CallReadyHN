@@ -67,7 +67,7 @@ test("cors: the site can read the API and send the sign-in header; other origins
 
 test("public: /config and /scenarios need no sign-in", async () => {
   assert.deepEqual((await call("GET", "/config")).data, { supabaseUrl: "https://abc.supabase.co", supabaseKey: "sb_publishable_x" });
-  assert.equal((await call("GET", "/scenarios")).data.scenarios.length, 6);
+  assert.equal((await call("GET", "/scenarios")).data.scenarios.length, 13);
 });
 
 test("auth: everything personal needs a valid token", async () => {
@@ -79,37 +79,55 @@ test("auth: everything personal needs a valid token", async () => {
   assert.equal((await call("GET", "/me", { token: "forged" })).status, 401);
 });
 
-test("me: profile is created on first sign-in; goal and level are validated", async () => {
+test("me: profile is created on first sign-in; role and interests are validated", async () => {
   const me = (await call("GET", "/me", { token: "ana-token" })).data;
   assert.equal(me.email, "ana@example.com");
-  assert.equal(me.goal, null);
+  assert.equal(me.role, null);
+  assert.deepEqual(me.interests, []);
   assert.equal(me.isPro, false);
   assert.equal(me.isAdmin, false);
   assert.equal(me.freeDailyLimit, 2);
   assert.equal(me.callsToday, 0);
-  assert.equal((await call("PUT", "/me", { token: "ana-token", body: { goal: "job", level: "C1" } })).status, 400);
-  const saved = (await call("PUT", "/me", { token: "ana-token", body: { goal: "job", level: "B1" } })).data;
-  assert.equal(saved.level, "B1");
+  assert.equal((await call("PUT", "/me", { token: "ana-token", body: { role: "boss", interests: [] } })).status, 400);
+  assert.equal((await call("PUT", "/me", { token: "ana-token", body: { role: "agent", interests: ["retail"] } })).status, 400);
+  const saved = (await call("PUT", "/me", { token: "ana-token", body: { role: "agent", interests: ["tech", "tech", "collections"] } })).data;
+  assert.equal(saved.role, "agent");
+  assert.deepEqual(saved.interests, ["tech", "collections"]);
 });
 
-test("flow: a call, its feedback, then history and detail", async () => {
+test("public scenarios show the desk panel but not the caller-only facts", async () => {
+  const list = (await call("GET", "/scenarios")).data.scenarios;
+  const wifi = list.find((x: { id: string }) => x.id === "tech-wifi-down");
+  assert.ok(wifi.policies.length > 0);
+  assert.ok(wifi.account.length > 0);
+  assert.equal(wifi.hiddenFacts, undefined);
+  assert.ok(!JSON.stringify(list).includes("loose"));
+});
+
+test("flow: a call, its scorecard, then history and the review with transcript", async () => {
   const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-  llm.push(JSON.stringify({ line: "Hi, I have a problem.", end: false }), goodFeedback);
-  const t = await call("POST", "/session/turn", { token: "ana-token", body: { sessionId: id, scenarioId: "order-status", history: [] } });
-  assert.equal(t.status, 200);
+  llm.push(JSON.stringify({ line: "Hi, my internet is down.", end: false }), goodFeedback);
+  const greeting = exchanges(0);
+  const t = await call("POST", "/session/turn", { token: "ana-token", body: { sessionId: id, scenarioId: "tech-wifi-down", history: greeting } });
+  assert.equal(t.status, 200, JSON.stringify(t.data));
   assert.equal((await call("GET", "/me", { token: "ana-token" })).data.callsToday, 1);
 
-  const history = [{ role: "customer", text: "Hi, I have a problem." }, ...exchanges(2).slice(1)];
-  const f = await call("POST", "/session/feedback", { token: "ana-token", body: { sessionId: id, scenarioId: "order-status", history } });
+  const history = [...greeting, { role: "customer", text: "Hi, my internet is down." }, ...exchanges(2).slice(2)];
+  const f = await call("POST", "/session/feedback", { token: "ana-token", body: { sessionId: id, scenarioId: "tech-wifi-down", history } });
   assert.equal(f.status, 200, JSON.stringify(f.data));
   assert.equal(f.data.callId, id);
+  assert.equal(f.data.qaScore, 60);
 
   const list = (await call("GET", "/calls", { token: "ana-token" })).data.calls;
   assert.equal(list.length, 1);
-  assert.equal(list[0].titleEs, "Estado de un pedido");
+  assert.equal(list[0].title, "Internet not working");
+  assert.equal(list[0].qaScore, 60);
   const detail = (await call("GET", `/calls/${id}`, { token: "ana-token" })).data;
-  assert.equal(detail.feedback.corrections.length, 3);
+  assert.equal(detail.feedback.qaScore, 60);
+  assert.equal(detail.feedback.criteria[0].label, "Opening");
+  assert.equal(detail.transcript.length, history.length);
   assert.equal((await call("GET", `/calls/${id}`, { token: "boss-token" })).status, 404, "not visible to others");
+
 });
 
 test("admin: only listed emails; users, Pro, usage", async () => {
@@ -138,38 +156,38 @@ test("admin: only listed emails; users, Pro, usage", async () => {
 
 test("admin: scenarios are validated, saved, and toggled", async () => {
   const list = (await call("GET", "/admin/scenarios", { token: "boss-token" })).data.scenarios;
-  const s = list.find((x: { id: string }) => x.id === "order-status");
+  const s = list.find((x: { id: string }) => x.id === "tech-wifi-down");
   assert.equal(s.enabled, true);
+  assert.ok(Array.isArray(s.hiddenFacts), "admins see the caller-only facts");
   const { enabled: _e, ...plain } = s;
 
-  const broken = await call("PUT", "/admin/scenarios/order-status", { token: "boss-token", body: { scenario: { ...plain, difficulty: "C1" }, enabled: true } });
+  const broken = await call("PUT", "/admin/scenarios/tech-wifi-down", { token: "boss-token", body: { scenario: { ...plain, temperament: "angry" }, enabled: true } });
   assert.equal(broken.status, 400);
-  assert.match(broken.data.error.message, /difficulty/);
-  const renamed = await call("PUT", "/admin/scenarios/order-status", { token: "boss-token", body: { scenario: { ...plain, id: "other" }, enabled: true } });
+  assert.match(broken.data.error.message, /temperament/);
+  const renamed = await call("PUT", "/admin/scenarios/tech-wifi-down", { token: "boss-token", body: { scenario: { ...plain, id: "other" }, enabled: true } });
   assert.equal(renamed.status, 400);
 
-  const ok = await call("PUT", "/admin/scenarios/order-status", { token: "boss-token", body: { scenario: { ...plain, summaryEs: "Nuevo resumen." }, enabled: true } });
+  const ok = await call("PUT", "/admin/scenarios/tech-wifi-down", { token: "boss-token", body: { scenario: { ...plain, summary: "New summary." }, enabled: true } });
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
   const pub = (await call("GET", "/scenarios")).data.scenarios;
-  assert.equal(pub.find((x: { id: string }) => x.id === "order-status").summaryEs, "Nuevo resumen.");
+  assert.equal(pub.find((x: { id: string }) => x.id === "tech-wifi-down").summary, "New summary.");
 
   const added = await call("PUT", "/admin/scenarios/new-scenario", { token: "boss-token", body: { scenario: { ...plain, id: "new-scenario" }, enabled: false } });
   assert.equal(added.status, 200);
-  assert.equal((await call("GET", "/scenarios")).data.scenarios.length, 6, "disabled scenarios stay hidden");
+  assert.equal((await call("GET", "/scenarios")).data.scenarios.length, 13, "disabled scenarios stay hidden");
   await call("POST", "/admin/scenarios/new-scenario/enabled", { token: "boss-token", body: { enabled: true } });
-  assert.equal((await call("GET", "/scenarios")).data.scenarios.length, 7);
+  assert.equal((await call("GET", "/scenarios")).data.scenarios.length, 14);
 });
 
 test("admin: settings are validated and change the free limit", async () => {
-  assert.equal((await call("PUT", "/admin/settings", { token: "boss-token", body: { freeDailyLimit: -1, proInstructionsEs: "x" } })).status, 400);
-  assert.equal((await call("PUT", "/admin/settings", { token: "boss-token", body: { freeDailyLimit: 3, proInstructionsEs: "" } })).status, 400);
-  const s = await call("PUT", "/admin/settings", { token: "boss-token", body: { freeDailyLimit: 5, proInstructionsEs: "Pague por transferencia." } });
+  assert.equal((await call("PUT", "/admin/settings", { token: "boss-token", body: { freeDailyLimit: -1, proInstructions: "x" } })).status, 400);
+  assert.equal((await call("PUT", "/admin/settings", { token: "boss-token", body: { freeDailyLimit: 3, proInstructions: "" } })).status, 400);
+  const s = await call("PUT", "/admin/settings", { token: "boss-token", body: { freeDailyLimit: 5, proInstructions: "Pay by bank transfer." } });
   assert.equal(s.status, 200);
   const me = (await call("GET", "/me", { token: "ana-token" })).data;
   assert.equal(me.freeDailyLimit, 5);
-  assert.equal(me.proInstructionsEs, "Pague por transferencia.");
+  assert.equal(me.proInstructions, "Pay by bank transfer.");
 });
-
 test("auth: claims must be an authenticated user with an email", () => {
   assert.deepEqual(userFromClaims({ sub: "u1", email: " Ana@Example.com ", role: "authenticated" }), { userId: "u1", email: "ana@example.com" });
   assert.throws(() => userFromClaims({ sub: "u1", email: "a@b.c", role: "anon" }), ApiError);

@@ -28,16 +28,16 @@ test("startOfRange covers N calendar days including today", () => {
 test("aggregateUsage groups by local day, newest first, with empty days", () => {
   const now = new Date("2026-10-11T18:00:00Z");
   const rows = [
-    { startedAt: new Date("2026-10-11T15:00:00Z"), userId: "a", tokens: 1000, avg: 6 },
-    { startedAt: new Date("2026-10-11T16:00:00Z"), userId: "a", tokens: 500, avg: 7 },
-    { startedAt: new Date("2026-10-11T17:00:00Z"), userId: "b", tokens: 200, avg: null },
-    { startedAt: new Date("2026-10-10T03:00:00Z"), userId: "b", tokens: 300, avg: 8 }, // Oct 9, 9 p.m. local
-    { startedAt: new Date("2026-09-01T12:00:00Z"), userId: "c", tokens: 999, avg: 5 }, // outside the range
+    { startedAt: new Date("2026-10-11T15:00:00Z"), userId: "a", tokens: 1000, qa: 60 },
+    { startedAt: new Date("2026-10-11T16:00:00Z"), userId: "a", tokens: 500, qa: 70 },
+    { startedAt: new Date("2026-10-11T17:00:00Z"), userId: "b", tokens: 200, qa: null },
+    { startedAt: new Date("2026-10-10T03:00:00Z"), userId: "b", tokens: 300, qa: 80 }, // Oct 9, 9 p.m. local
+    { startedAt: new Date("2026-09-01T12:00:00Z"), userId: "c", tokens: 999, qa: 50 }, // outside the range
   ];
   const days = aggregateUsage(rows, now, HN, 3);
   assert.deepEqual(days, [
-    { day: "2026-10-11", calls: 3, users: 2, tokens: 1700, avgScore: 6.5 },
-    { day: "2026-10-10", calls: 0, users: 0, tokens: 0, avgScore: null },
-    { day: "2026-10-09", calls: 1, users: 1, tokens: 300, avgScore: 8 },
+    { day: "2026-10-11", calls: 3, users: 2, tokens: 1700, avgQa: 65 },
+    { day: "2026-10-10", calls: 0, users: 0, tokens: 0, avgQa: null },
+    { day: "2026-10-09", calls: 1, users: 1, tokens: 300, avgQa: 80 },
   ]);
 });

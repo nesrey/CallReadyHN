@@ -55,7 +55,7 @@ export async function adminUsage(deps: Deps, query: Record<string, unknown>) {
   const tz = deps.config.timeZone;
   const rows = await deps.store.usageSince(startOfRange(now, tz, days));
   const byDay = aggregateUsage(rows, now, tz, days);
-  const scored = rows.filter((r) => r.avg !== null);
+  const scored = rows.filter((r) => r.qa !== null);
   return {
     days,
     timeZone: tz,
@@ -63,9 +63,7 @@ export async function adminUsage(deps: Deps, query: Record<string, unknown>) {
       calls: rows.length,
       users: new Set(rows.map((r) => r.userId)).size,
       tokens: rows.reduce((a, r) => a + r.tokens, 0),
-      avgScore: scored.length
-        ? Math.round((scored.reduce((a, r) => a + (r.avg as number), 0) / scored.length) * 10) / 10
-        : null,
+      avgQa: scored.length ? Math.round(scored.reduce((a, r) => a + (r.qa as number), 0) / scored.length) : null,
     },
     byDay,
   };
@@ -116,8 +114,8 @@ export async function adminSaveSettings(deps: Deps, body: unknown) {
   if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 0 || limit > 100) {
     throw bad("freeDailyLimit must be a whole number from 0 to 100.");
   }
-  const text = typeof b.proInstructionsEs === "string" ? b.proInstructionsEs.trim() : "";
-  if (!text || text.length > 1000) throw bad("proInstructionsEs must be 1 to 1000 characters.");
-  await deps.store.updateSettings({ freeDailyLimit: limit, proInstructionsEs: text });
+  const text = typeof b.proInstructions === "string" ? b.proInstructions.trim() : "";
+  if (!text || text.length > 1000) throw bad("proInstructions must be 1 to 1000 characters.");
+  await deps.store.updateSettings({ freeDailyLimit: limit, proInstructions: text });
   return deps.store.getSettings();
 }

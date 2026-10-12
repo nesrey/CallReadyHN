@@ -1,96 +1,139 @@
+/** The schema this version reads and writes. */
+export const DB = "callready_v2";
+
 /**
  * Database schema, applied at startup. Every statement is idempotent, so running it again is safe.
  *
- * Tables live in their own "callready" schema, which Supabase's public Data API does not expose, and row level
- * security is on with no policies. Only this server (connecting with the database password) can read or write them.
+ * Tables live in their own schema, which Supabase's public Data API does not expose, and row level security is on
+ * with no policies: only this server (connecting with the database password) can read or write them.
+ *
+ * Version 2 (call-center pivot) uses a fresh schema. The first start copies accounts (Pro status) and the free daily
+ * limit from version 1 ("callready"); version 1 calls stay where they are and are no longer shown.
  */
 export const SCHEMA_SQL = `
-create schema if not exists callready;
+create schema if not exists ${DB};
 
-create table if not exists callready.profiles (
+create table if not exists ${DB}.profiles (
   user_id uuid primary key,
   email text not null,
-  goal text check (goal in ('job', 'improve')),
-  level text check (level in ('A2', 'B1', 'B2')),
+  role text check (role in ('job_seeker', 'agent', 'trainer')),
+  interests text[] not null default '{}',
   is_pro boolean not null default false,
   pro_until timestamptz,
   created_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
-create index if not exists profiles_email on callready.profiles (lower(email));
+create index if not exists profiles_email on ${DB}.profiles (lower(email));
 
-create table if not exists callready.scenarios (
+create table if not exists ${DB}.scenarios (
   id text primary key,
-  title_es text not null,
-  title_en text not null,
-  summary_es text not null,
-  difficulty text not null check (difficulty in ('A2', 'B1', 'B2')),
+  title text not null,
+  summary text not null,
+  call_type text not null check (call_type in ('service', 'tech', 'sales', 'collections', 'interview')),
+  temperament text not null check (temperament in ('calm', 'demanding', 'furious')),
   tier text not null check (tier in ('free', 'pro')),
-  category text not null check (category in ('support', 'sales', 'interview')),
-  ai_role text not null check (ai_role in ('customer', 'interviewer')),
+  company text not null,
   persona_name text not null,
   persona_background text not null,
-  persona_mood text not null,
   persona_speech_style text not null,
   goal text not null,
+  account_labels text[] not null,
+  account_values text[] not null,
+  policies text[] not null,
   hidden_facts text[] not null default '{}',
-  expected_flow text[] not null,
-  difficulty_notes text not null default '',
+  behavior_notes text not null default '',
   enabled boolean not null default true,
   sort_order integer not null default 0,
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  check (cardinality(account_labels) = cardinality(account_values))
 );
 
-create table if not exists callready.calls (
+create table if not exists ${DB}.calls (
   id uuid primary key,
-  user_id uuid not null references callready.profiles (user_id) on delete cascade,
-  scenario_id text not null references callready.scenarios (id),
+  user_id uuid not null references ${DB}.profiles (user_id) on delete cascade,
+  scenario_id text not null references ${DB}.scenarios (id),
   started_at timestamptz not null default now(),
   turns integer not null default 0,
   tokens integer not null default 0,
   finished_at timestamptz,
   duration_sec integer,
-  score_fluency smallint,
-  score_grammar smallint,
-  score_vocabulary smallint,
-  score_empathy smallint,
-  score_call_flow smallint,
-  avg_score numeric(3, 1),
-  summary_es text
+  qa_score smallint check (qa_score between 0 and 100),
+  summary text
 );
-create index if not exists calls_user_started on callready.calls (user_id, started_at desc);
-create index if not exists calls_started on callready.calls (started_at);
+create index if not exists calls_user_started on ${DB}.calls (user_id, started_at desc);
+create index if not exists calls_started on ${DB}.calls (started_at);
 
-create table if not exists callready.call_corrections (
-  call_id uuid not null references callready.calls (id) on delete cascade,
+create table if not exists ${DB}.call_criteria (
+  call_id uuid not null references ${DB}.calls (id) on delete cascade,
+  position smallint not null,
+  key text not null,
+  score smallint not null check (score between 0 and 10),
+  evidence text not null,
+  tip text not null,
+  primary key (call_id, position)
+);
+
+create table if not exists ${DB}.call_strengths (
+  call_id uuid not null references ${DB}.calls (id) on delete cascade,
+  position smallint not null,
+  text text not null,
+  primary key (call_id, position)
+);
+
+create table if not exists ${DB}.call_moments (
+  call_id uuid not null references ${DB}.calls (id) on delete cascade,
   position smallint not null,
   said text not null,
   better text not null,
-  explanation_es text not null,
+  why text not null,
   primary key (call_id, position)
 );
 
-create table if not exists callready.call_phrases (
-  call_id uuid not null references callready.calls (id) on delete cascade,
+create table if not exists ${DB}.call_phrases (
+  call_id uuid not null references ${DB}.calls (id) on delete cascade,
   position smallint not null,
   phrase text not null,
-  meaning_es text not null,
-  when_to_use_es text not null,
+  when_to_use text not null,
   primary key (call_id, position)
 );
 
-create table if not exists callready.settings (
+create table if not exists ${DB}.call_turns (
+  call_id uuid not null references ${DB}.calls (id) on delete cascade,
+  position smallint not null,
+  role text not null check (role in ('customer', 'agent')),
+  text text not null,
+  primary key (call_id, position)
+);
+
+create table if not exists ${DB}.settings (
   id boolean primary key default true check (id),
   free_daily_limit integer not null default 2 check (free_daily_limit >= 0),
-  pro_instructions_es text not null default 'Para activar Pro, comuníquese con el equipo de CallReady.',
+  pro_instructions text not null default 'To activate Pro, contact the CallReady team.',
   updated_at timestamptz not null default now()
 );
-insert into callready.settings (id) values (true) on conflict (id) do nothing;
 
-alter table callready.profiles enable row level security;
-alter table callready.scenarios enable row level security;
-alter table callready.calls enable row level security;
-alter table callready.call_corrections enable row level security;
-alter table callready.call_phrases enable row level security;
-alter table callready.settings enable row level security;
+do $$
+begin
+  if to_regclass('callready.profiles') is not null then
+    insert into ${DB}.profiles (user_id, email, is_pro, pro_until, created_at, last_seen_at)
+    select user_id, email, is_pro, pro_until, created_at, last_seen_at from callready.profiles
+    on conflict (user_id) do nothing;
+  end if;
+  if to_regclass('callready.settings') is not null then
+    insert into ${DB}.settings (id, free_daily_limit)
+    select true, free_daily_limit from callready.settings
+    on conflict (id) do nothing;
+  end if;
+end $$;
+insert into ${DB}.settings (id) values (true) on conflict (id) do nothing;
+
+alter table ${DB}.profiles enable row level security;
+alter table ${DB}.scenarios enable row level security;
+alter table ${DB}.calls enable row level security;
+alter table ${DB}.call_criteria enable row level security;
+alter table ${DB}.call_strengths enable row level security;
+alter table ${DB}.call_moments enable row level security;
+alter table ${DB}.call_phrases enable row level security;
+alter table ${DB}.call_turns enable row level security;
+alter table ${DB}.settings enable row level security;
 `;

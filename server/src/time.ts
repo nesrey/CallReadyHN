@@ -38,8 +38,8 @@ export interface UsageDay {
   calls: number;
   users: number;
   tokens: number;
-  /** Average of the calls that got feedback; null when none did. */
-  avgScore: number | null;
+  /** Average QA score (0-100) of the calls that got feedback; null when none did. */
+  avgQa: number | null;
 }
 
 /** Group started calls by local day, newest day first, including days with no calls. */
@@ -56,15 +56,13 @@ export function aggregateUsage(rows: UsageRow[], now: Date, tz: string, days: nu
     b.calls++;
     b.users.add(r.userId);
     b.tokens += r.tokens;
-    if (r.avg !== null) b.scores.push(r.avg);
+    if (r.qa !== null) b.scores.push(r.qa);
   }
   return [...byDay.entries()].map(([day, b]) => ({
     day,
     calls: b.calls,
     users: b.users.size,
     tokens: b.tokens,
-    avgScore: b.scores.length
-      ? Math.round((b.scores.reduce((a, x) => a + x, 0) / b.scores.length) * 10) / 10
-      : null,
+    avgQa: b.scores.length ? Math.round(b.scores.reduce((a, x) => a + x, 0) / b.scores.length) : null,
   }));
 }

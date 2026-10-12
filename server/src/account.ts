@@ -1,12 +1,12 @@
 import type { AuthUser } from "./auth.js";
-import { proActive, type Goal } from "./db/store.js";
+import { proActive, ROLES, type Role } from "./db/store.js";
 import { ApiError } from "./errors.js";
-import { nowOf, type Deps } from "./handlers.js";
-import { DIFFICULTIES, type Difficulty } from "./scenarios/load.js";
+import { nowOf, presentFeedback, type Deps } from "./handlers.js";
+import { rubricFor } from "./llm/rubric.js";
+import { CALL_TYPES, type CallType } from "./scenarios/load.js";
 import { startOfDay } from "./time.js";
 import { isUuid } from "./validate.js";
 
-const GOALS: readonly Goal[] = ["job", "improve"];
 const bad = (msg: string) => new ApiError(400, "invalid_request", msg);
 
 export function isAdmin(deps: Deps, user: AuthUser): boolean {
@@ -25,14 +25,14 @@ export async function getMe(deps: Deps, user: AuthUser) {
   const pro = proActive(profile, now);
   return {
     email: profile.email,
-    goal: profile.goal,
-    level: profile.level,
+    role: profile.role,
+    interests: profile.interests,
     isPro: pro,
     proUntil: pro && profile.proUntil ? profile.proUntil.toISOString() : null,
     isAdmin: isAdmin(deps, user),
     callsToday,
     freeDailyLimit: settings.freeDailyLimit,
-    proInstructionsEs: settings.proInstructionsEs,
+    proInstructions: settings.proInstructions,
     /** For showing dates (e.g. Pro end) in the same time zone the server counts days in. */
     timeZone: deps.config.timeZone,
   };
@@ -40,9 +40,12 @@ export async function getMe(deps: Deps, user: AuthUser) {
 
 export async function updateMe(deps: Deps, user: AuthUser, body: unknown) {
   const b = (body ?? {}) as Record<string, unknown>;
-  if (!GOALS.includes(b.goal as Goal)) throw bad("goal must be job or improve.");
-  if (!(DIFFICULTIES as readonly string[]).includes(b.level as string)) throw bad("level must be A2, B1 or B2.");
-  await deps.store.updateGoalLevel(user.userId, b.goal as Goal, b.level as Difficulty);
+  if (!(ROLES as readonly string[]).includes(b.role as string)) throw bad(`role must be one of ${ROLES.join(", ")}.`);
+  const interests = b.interests;
+  if (!Array.isArray(interests) || interests.some((x) => !(CALL_TYPES as readonly string[]).includes(x as string))) {
+    throw bad(`interests must be a list of ${CALL_TYPES.join(", ")}.`);
+  }
+  await deps.store.updateProfile(user.userId, b.role as Role, [...new Set(interests as CallType[])]);
   return getMe(deps, user);
 }
 
@@ -55,5 +58,6 @@ export async function getMyCall(deps: Deps, user: AuthUser, id: string) {
   if (!isUuid(id)) throw new ApiError(404, "not_found", "Call not found.");
   const c = await deps.store.getCallDetail(user.userId, id);
   if (!c) throw new ApiError(404, "not_found", "Call not found.");
-  return { ...c, startedAt: c.startedAt.toISOString() };
+  const { feedback, ...rest } = c;
+  return { ...rest, startedAt: c.startedAt.toISOString(), feedback: presentFeedback(feedback, rubricFor(c.callType)) };
 }

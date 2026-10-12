@@ -4,6 +4,7 @@ import {
   callWithRetry, extractJson, parseFeedbackOutput, parseTurnOutput,
 } from "../llm/parse.js";
 import { ApiError } from "../errors.js";
+import { CUSTOMER_RUBRIC, INTERVIEW_RUBRIC, qaScore } from "../llm/rubric.js";
 import { MockLlm, goodFeedback } from "./helpers.js";
 
 const fb = () => JSON.parse(goodFeedback) as Record<string, any>;
@@ -30,46 +31,53 @@ test("parseTurnOutput rejects empty line and wrong types", () => {
   assert.throws(() => parseTurnOutput('{"line":"x","end":"yes"}'), /true or false/);
 });
 
-test("parseFeedbackOutput accepts a valid payload", () => {
-  const out = parseFeedbackOutput(goodFeedback);
-  assert.equal(out.scores.grammar, 5);
-  assert.equal(out.corrections.length, 3);
-  assert.equal(out.phrases.length, 3);
-  assert.equal(out.overallSummaryEs, "Buen trabajo.");
+test("parseFeedbackOutput returns the criteria in rubric order", () => {
+  const out = parseFeedbackOutput(goodFeedback, CUSTOMER_RUBRIC);
+  assert.deepEqual(out.criteria.map((c) => c.key), CUSTOMER_RUBRIC.map((c) => c.key));
+  assert.equal(out.criteria[0]!.score, 6);
+  assert.equal(out.strengths.length, 2);
+  assert.equal(out.moments.length, 3);
+  assert.equal(out.phrases[0]!.whenToUse, "When closing.");
+  assert.equal(out.summary, "Solid call.");
 });
 
-test("parseFeedbackOutput rounds fractional scores", () => {
-  const f = fb();
-  f.scores.fluency = 6.6;
-  assert.equal(parseFeedbackOutput(JSON.stringify(f)).scores.fluency, 7);
+test("parseFeedbackOutput rounds scores and checks the 0-10 range", () => {
+  const f = fb(); f.criteria.opening.score = 6.6;
+  assert.equal(parseFeedbackOutput(JSON.stringify(f), CUSTOMER_RUBRIC).criteria[0]!.score, 7);
+  const z = fb(); z.criteria.opening.score = 0;
+  assert.equal(parseFeedbackOutput(JSON.stringify(z), CUSTOMER_RUBRIC).criteria[0]!.score, 0, "0 = not done is valid");
+  const a = fb(); a.criteria.empathy.score = 11;
+  assert.throws(() => parseFeedbackOutput(JSON.stringify(a), CUSTOMER_RUBRIC), /between 0 and 10/);
+  const b = fb(); b.criteria.empathy.score = "7";
+  assert.throws(() => parseFeedbackOutput(JSON.stringify(b), CUSTOMER_RUBRIC), /must be a number/);
 });
 
-test("parseFeedbackOutput rejects out-of-range and non-numeric scores", () => {
-  const a = fb(); a.scores.grammar = 11;
-  assert.throws(() => parseFeedbackOutput(JSON.stringify(a)), /between 1 and 10/);
-  const b = fb(); b.scores.grammar = 0;
-  assert.throws(() => parseFeedbackOutput(JSON.stringify(b)), /between 1 and 10/);
-  const c = fb(); c.scores.grammar = "7";
-  assert.throws(() => parseFeedbackOutput(JSON.stringify(c)), /must be a number/);
+test("parseFeedbackOutput needs every rubric item with evidence and a tip", () => {
+  const a = fb(); delete a.criteria.closing;
+  assert.throws(() => parseFeedbackOutput(JSON.stringify(a), CUSTOMER_RUBRIC), /closing is missing/);
+  const b = fb(); b.criteria.resolution.evidence = "";
+  assert.throws(() => parseFeedbackOutput(JSON.stringify(b), CUSTOMER_RUBRIC), /resolution\.evidence/);
+  // The interview rubric has different items, so a customer scorecard does not pass it.
+  assert.throws(() => parseFeedbackOutput(goodFeedback, INTERVIEW_RUBRIC), /introduction is missing/);
 });
 
-test("parseFeedbackOutput rejects missing score and wrong counts", () => {
-  const a = fb(); delete a.scores.callFlow;
-  assert.throws(() => parseFeedbackOutput(JSON.stringify(a)), /callFlow/);
-  const b = fb(); b.corrections.pop();
-  assert.throws(() => parseFeedbackOutput(JSON.stringify(b)), /exactly 3/);
-  const c = fb(); c.phrases.push(c.phrases[0]);
-  assert.throws(() => parseFeedbackOutput(JSON.stringify(c)), /exactly 3/);
+test("parseFeedbackOutput needs at least one strength, moment and phrase, and keeps at most 3", () => {
+  const a = fb(); a.moments = [];
+  assert.throws(() => parseFeedbackOutput(JSON.stringify(a), CUSTOMER_RUBRIC), /moments/);
+  const b = fb(); b.phrases.push(...b.phrases);
+  assert.equal(parseFeedbackOutput(JSON.stringify(b), CUSTOMER_RUBRIC).phrases.length, 3);
+  const c = fb(); c.moments[1].why = " ";
+  assert.throws(() => parseFeedbackOutput(JSON.stringify(c), CUSTOMER_RUBRIC), /moments\[1\]\.why/);
+  const d = fb(); delete d.summary;
+  assert.equal(parseFeedbackOutput(JSON.stringify(d), CUSTOMER_RUBRIC).summary, "");
 });
 
-test("parseFeedbackOutput rejects empty correction fields", () => {
-  const f = fb(); f.corrections[1].explanationEs = "";
-  assert.throws(() => parseFeedbackOutput(JSON.stringify(f)), /explanationEs/);
-});
-
-test("parseFeedbackOutput tolerates a missing summary", () => {
-  const f = fb(); delete f.overallSummaryEs;
-  assert.equal(parseFeedbackOutput(JSON.stringify(f)).overallSummaryEs, "");
+test("qaScore weights the 0-10 scores into 0-100", () => {
+  const all = (n: number) => Object.fromEntries(CUSTOMER_RUBRIC.map((c) => [c.key, n]));
+  assert.equal(qaScore(all(10), CUSTOMER_RUBRIC), 100);
+  assert.equal(qaScore(all(6), CUSTOMER_RUBRIC), 60);
+  assert.equal(qaScore({ ...all(10), resolution: 0 }, CUSTOMER_RUBRIC), 80, "resolution weighs 20");
+  for (const r of [CUSTOMER_RUBRIC, INTERVIEW_RUBRIC]) assert.equal(r.reduce((a, c) => a + c.weight, 0), 100);
 });
 
 const retryOpts = (llm: MockLlm, used: number[] = []) => ({

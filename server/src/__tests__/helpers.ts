@@ -19,9 +19,9 @@ export class MockLlm implements LlmClient {
   }
 }
 
-/** n customer/agent exchanges: C, A, C, A ... ending with an agent line. */
+/** The agent's greeting, then n caller/agent exchanges: A, C, A, C ... A. Ends with an agent line. */
 export function exchanges(n: number): Message[] {
-  const out: Message[] = [];
+  const out: Message[] = [{ role: "agent", text: "Thank you for calling, my name is Ana. How can I help you?" }];
   for (let i = 1; i <= n; i++) {
     out.push({ role: "customer", text: `Customer line ${i}.` });
     out.push({ role: "agent", text: `Agent answer number ${i} thank you.` });
@@ -29,20 +29,18 @@ export function exchanges(n: number): Message[] {
   return out;
 }
 
-export const goodFeedback = JSON.stringify({
-  scores: { fluency: 6, grammar: 5, vocabulary: 6, empathyPoliteness: 7, callFlow: 6 },
-  corrections: [1, 2, 3].map((i) => ({
-    said: `I can't to help ${i}`,
-    better: `I'm unable to help ${i}`,
-    explanationEs: "Después de 'can' no se usa 'to'.",
-  })),
-  phrases: [1, 2, 3].map((i) => ({
-    phrase: `Phrase ${i}`,
-    meaningEs: "Significado",
-    whenToUseEs: "Cuando sea necesario",
-  })),
-  overallSummaryEs: "Buen trabajo.",
-});
+/** A valid scorecard for a customer call: every criterion 6/10 (QA 60). */
+export function feedbackFor(keys: readonly string[], score = 6) {
+  return {
+    criteria: Object.fromEntries(keys.map((k) => [k, { score, evidence: `"quote for ${k}"`, tip: `Tip for ${k}.` }])),
+    strengths: ["You verified the caller.", "You kept a calm tone."],
+    moments: [1, 2, 3].map((i) => ({ said: `no problem ${i}`, better: `Certainly ${i}`, why: "Sounds more professional." })),
+    phrases: [1, 2, 3].map((i) => ({ phrase: `Phrase ${i}`, whenToUse: "When closing." })),
+    summary: "Solid call.",
+  };
+}
+export const CUSTOMER_KEYS = ["opening", "verification", "listening", "empathy", "control", "resolution", "language", "closing"];
+export const goodFeedback = JSON.stringify(feedbackFor(CUSTOMER_KEYS));
 
 /** A fresh in-memory Postgres (PGlite) with the schema and the seed scenarios. */
 export async function freshStore(): Promise<PgStore> {
