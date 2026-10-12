@@ -406,6 +406,74 @@ details.review[open] summary h2::after{content:" ▾"}
 .score.weak .meter{background:var(--maize-50)}
 @media (max-width:420px){ details.crit summary{grid-template-columns:112px 1fr 24px 16px;gap:8px} }
 
+/* ---------- responsive layout: phone first; tablet from 720px; desktop from 1024px ---------- */
+.side{display:none}
+.frame>main{min-width:0}
+.cards{display:grid;grid-template-columns:1fr;gap:0 16px}
+.cols{display:grid;grid-template-columns:1fr;gap:0 28px;align-items:start}
+.choices{display:grid;grid-template-columns:1fr;gap:0 12px}
+
+@media (min-width:720px){
+  #app{max-width:900px;padding-left:24px;padding-right:24px}
+  .hero{margin:20px 0 22px;border-radius:28px;padding:28px 28px 26px}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cards .sc{height:calc(100% - 12px)}
+  .cards .sc{align-items:start}
+  .cards .sc-go{align-self:center}
+  .chart svg{max-height:280px}
+  .choices{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .choices .choice{height:calc(100% - 10px)}
+  .benefits{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .benefits li{grid-template-columns:1fr;align-content:start}
+  .filters{margin-left:0;margin-right:0;padding-left:0;padding-right:0;flex-wrap:wrap;overflow:visible}
+  .stats{gap:14px}
+  main.solo{max-width:820px;margin:0 auto}
+}
+
+@media (min-width:1024px){
+  #app{max-width:none;padding:0}
+  .frame{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:100vh}
+  .frame>main{padding:28px 40px 56px;max-width:1240px;width:100%}
+  .frame.narrow>main{max-width:820px}
+  body.wide #app{max-width:1240px;padding:0 40px 56px}
+  .tabs{display:none}
+  .side{display:flex;flex-direction:column;gap:8px;position:sticky;top:0;height:100vh;padding:26px 18px;background:rgba(255,255,255,.75);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-right:1px solid var(--line)}
+  .side .brand{padding:0 10px 18px}
+  .side-nav{display:grid;gap:4px}
+  .side-nav a{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;text-decoration:none;font-weight:600;color:var(--muted);transition:background .15s,color .15s}
+  .side-nav a:hover{background:#EEF2F7;color:var(--ink)}
+  .side-nav a[aria-current=page]{background:var(--cobalt-50);color:var(--cobalt)}
+  .side-plan{margin-top:auto;display:flex;align-items:center;gap:8px;padding:12px;border-radius:14px;background:var(--maize-50);color:#7A4E00;text-decoration:none;font-weight:600;font-size:14px}
+  .side-plan svg{width:18px;height:18px}
+  .side-user{font-size:13px;color:var(--muted);padding:0 12px;overflow-wrap:anywhere}
+  .hero{margin:0 0 24px;padding:32px 36px 30px}
+  .hero h1{font-size:36px}
+  .hero .brand{display:none}
+  .frame .hero .brand{display:none}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+  .cols{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr)}
+  .choices.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+  main.solo{max-width:960px;padding:24px 0 48px}
+  main.solo .hero .brand{display:flex}
+  .score{grid-template-columns:170px 1fr 30px}
+
+  /* sign-in: welcome on the left, form on the right */
+  main.login-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(360px,.85fr);grid-template-rows:1fr auto auto 1fr;gap:0 48px;
+    max-width:1180px;min-height:100vh;margin:0 auto;padding:32px 40px;align-items:center}
+  main.login-grid .login-hero{grid-row:1 / -1;grid-column:1;align-self:stretch;display:flex;flex-direction:column;justify-content:center;margin:0;padding:48px 48px 56px}
+  main.login-grid .login-hero .brand{display:flex}
+  main.login-grid .login-hero h1{font-size:46px;max-width:13ch}
+  main.login-grid .login-hero .bubbles{max-width:420px}
+  main.login-grid .login-card{margin:0;grid-column:2;grid-row:2;padding:28px 26px}
+  main.login-grid>p{grid-column:2;grid-row:3;text-align:left!important}
+}
+
+@media (min-width:1440px){
+  .frame{grid-template-columns:280px minmax(0,1fr)}
+  .frame>main{padding:32px 56px 64px}
+}
+
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
   .wave.on span{height:18px}
@@ -675,11 +743,16 @@ function fmtDate(iso, withYear) {
 // Pro ends at the start of the day after the chosen date; show the chosen date.
 const proEndText = (iso) => fmtDate(new Date(new Date(iso).getTime() - 1).toISOString(), true);
 
-function shell(inner, active) {
+// Signed-in learner pages: sidebar on desktop, bottom tabs on phones and tablets. width: '' | 'narrow'.
+function shell(inner, active, width) {
   const tabs = [['scenarios', 'Calls', I.phone], ['progress', 'Progress', I.chart], ['settings', 'Settings', I.gear]];
-  return '<main>' + inner + '</main><nav class="tabs" aria-label="Main"><div class="tabs-in">' +
-    tabs.map((t) => '<a href="#/' + t[0] + '"' + (active === t[0] ? ' aria-current="page"' : '') + '>' + t[2] + '<span>' + t[1] + '</span></a>').join('') +
-    '</div></nav>';
+  const link = (t) => '<a href="#/' + t[0] + '"' + (active === t[0] ? ' aria-current="page"' : '') + '>' + t[2] + '<span>' + t[1] + '</span></a>';
+  const side = '<aside class="side" aria-label="Main">' + brandMark() + '<nav class="side-nav">' + tabs.map(link).join('') +
+    (me && me.isAdmin ? '<a href="#/admin">' + I.admin + '<span>Admin</span></a>' : '') + '</nav>' +
+    (me ? '<a class="side-plan" href="#/pro">' + (me.isPro ? I.star + '<span>Pro plan</span>' : I.star + '<span>Free plan · ' + Math.min(me.callsToday, me.freeDailyLimit) + ' of ' + me.freeDailyLimit + ' today</span>') + '</a>' +
+      '<p class="side-user">' + esc(me.email) + '</p>' : '') + '</aside>';
+  return '<div class="frame' + (width ? ' ' + width : '') + '">' + side + '<main>' + inner + '</main></div>' +
+    '<nav class="tabs" aria-label="Main"><div class="tabs-in">' + tabs.map(link).join('') + '</div></nav>';
 }
 function backHeader(title, href) {
   return '<header class="top"><a class="icon-btn" href="' + href + '" aria-label="Back">' + I.back + '</a><h1>' + esc(title) + '</h1></header>';
@@ -786,7 +859,7 @@ function authErrText(error) {
 function loginView() {
   const appUrl = location.origin + location.pathname;
   let email = '';
-  root().innerHTML = '<main><section class="hero login-hero">' + brandMark() +
+  root().innerHTML = '<main class="login-grid"><section class="hero login-hero">' + brandMark() +
     '<h1>Practice real customer calls before your first shift</h1>' +
     '<p class="sub">An AI caller phones in, you handle the call, and a QA scorecard shows exactly what to improve.</p>' +
     '<div class="bubbles" aria-hidden="true"><span class="c">Hi, I was charged twice this month and I need that money back.</span><span class="a">I\'m sorry about that. Let me look into it right away.</span></div></section>' +
@@ -873,12 +946,12 @@ function onboardingView() {
   const choice = (sel, key, ico, t, d, attr) => '<button type="button" class="choice" data-' + attr + '="' + key + '" aria-pressed="' + sel + '">' +
     '<span class="ico" aria-hidden="true">' + ico + '</span><span><b>' + t + '</b><span class="d">' + d + '</span></span>' +
     '<span class="tick" aria-hidden="true">' + I.check + '</span></button>';
-  root().innerHTML = '<main>' + (first
+  root().innerHTML = '<main class="solo">' + (first
     ? '<section class="hero">' + brandMark() + '<h1>Welcome to CallReady</h1><p class="sub">Two quick questions so we can line up the right calls for you.</p></section>'
     : backHeader('Role and focus', '#/settings')) +
-    '<fieldset><legend>What describes you best?</legend>' + roles.map((x) => choice(role === x[0], x[0], x[1], x[2], x[3], 'role')).join('') + '</fieldset>' +
+    '<fieldset><legend>What describes you best?</legend><div class="choices three">' + roles.map((x) => choice(role === x[0], x[0], x[1], x[2], x[3], 'role')).join('') + '</div></fieldset>' +
     '<fieldset><legend>Which calls do you want to practice?</legend><p class="section-sub">Pick any. You can practice every type either way.</p>' +
-    types.map((t) => choice(interests.has(t), t, CAT[t][1], CALL_NAMES[t], TYPE_BLURB[t], 'type')).join('') + '</fieldset>' +
+    '<div class="choices">' + types.map((t) => choice(interests.has(t), t, CAT[t][1], CALL_NAMES[t], TYPE_BLURB[t], 'type')).join('') + '</div></fieldset>' +
     '<div class="note err" id="err" role="alert" hidden></div>' +
     '<button class="btn primary block" id="go" disabled>' + (first ? 'Start practicing' : 'Save') + '</button></main>';
   const go = $('#go');
@@ -953,7 +1026,7 @@ async function scenariosView(vid) {
   // The privacy policy promises that important changes are announced in the app; shown once per browser.
   const policyNote = store.get('policySeen', '') === '2026-10-11' ? '' :
     '<div class="note" id="policy" role="status">We updated our <a href="../privacy.html">privacy policy</a>: practice calls are now saved with their transcript so you can review them. <button class="btn link" id="policy-ok">Got it</button></div>';
-  root().innerHTML = shell(scenariosHero(counter) + policyNote + chips + '<div id="msg" class="note" role="status" hidden></div>' + cards, 'scenarios');
+  root().innerHTML = shell(scenariosHero(counter) + policyNote + chips + '<div id="msg" class="note" role="status" hidden></div><div class="cards">' + cards + '</div>', 'scenarios');
   const ok = $('#policy-ok');
   if (ok) ok.addEventListener('click', () => { store.set('policySeen', '2026-10-11'); $('#policy').remove(); });
   root().querySelectorAll('.sc').forEach((b) => b.addEventListener('click', () => {
@@ -1252,19 +1325,19 @@ async function resultsView(callId, vid) {
     return '<div class="tl ' + (t.role === 'agent' ? 'ag' : 'cl') + '"><span class="who">' + (t.role === 'agent' ? 'You' : 'Caller') + '</span><p>' + body + '</p></div>';
   }).join('');
 
-  root().innerHTML = '<main><section class="hero"><header class="top"><a class="icon-btn" href="#/scenarios" aria-label="Back">' + I.back + '</a></header>' +
+  root().innerHTML = shell('<section class="hero"><header class="top"><a class="icon-btn" href="#/scenarios" aria-label="Back">' + I.back + '</a></header>' +
     '<p class="sub" style="margin-top:4px">' + esc(CALL_NAMES[call.callType]) + ' · ' + esc(TEMPER_NAMES[call.temperament]) + ' caller · ' + formatTime(call.durationSec) + '</p>' +
     '<h1>' + esc(call.title) + '</h1>' +
     '<div class="avg"><span class="avg-n">' + f.qaScore + '</span><span class="avg-of">/ 100 QA score</span></div>' +
     '<div class="pillbar" style="margin-top:6px">' + esc(verdict(f.qaScore)) + '</div>' +
     (f.summary ? '<p class="summary" style="margin-top:14px">' + esc(f.summary) + '</p>' : '') + '</section>' +
-    '<section class="block" style="margin-top:6px"><h2>Scorecard</h2><p class="section-sub">Tap an item to see the evidence and a tip.</p><div class="card scorecard">' + crit + '</div></section>' +
+    '<div class="cols"><div><section class="block" style="margin-top:6px"><h2>Scorecard</h2><p class="section-sub">Tap an item to see the evidence and a tip.</p><div class="card scorecard">' + crit + '</div></section>' +
     '<section class="block"><h2>What you did well</h2><ul class="card strengths">' + strengths + '</ul></section>' +
-    '<section class="block"><h2>Coaching moments</h2>' + moments + '</section>' +
-    '<section class="block"><h2>Power phrases</h2>' + phrases + '</section>' +
+    '</div><div><section class="block" style="margin-top:6px"><h2>Coaching moments</h2>' + moments + '</section>' +
+    '<section class="block"><h2>Power phrases</h2>' + phrases + '</section></div></div>' +
     (transcript ? '<section class="block"><details class="card review"><summary><h2>Review the call</h2><span class="muted small">Highlighted lines are the coaching moments.</span></summary><div class="tlist">' + transcript + '</div></details></section>' : '') +
     '<div class="stack"><a class="btn primary block" style="text-align:center;text-decoration:none" href="#/call/' + encodeURIComponent(call.scenarioId) + '">Try this call again</a>' +
-    '<a class="btn block" style="text-align:center;text-decoration:none" href="#/scenarios">Back to calls</a></div></main>';
+    '<a class="btn block" style="text-align:center;text-decoration:none" href="#/scenarios">Back to calls</a></div>', 'progress');
   root().querySelectorAll('[data-say]').forEach((b) => b.addEventListener('click', () => speak(f.phrases[Number(b.dataset.say)].phrase, 0.95)));
   cleanup = stopSpeech;
 }
@@ -1316,10 +1389,10 @@ async function progressView(vid) {
       '<span><b>' + esc(c.title) + '</b><br><span class="muted small">' +
       fmtDate(c.startedAt) + ' · ' + formatTime(c.durationSec) + ' · ' + TEMPER_NAMES[c.temperament] + '</span></span>' +
       '<span class="sc-n" aria-label="QA score ' + c.qaScore + ' out of 100">' + c.qaScore + '</span></a>').join('');
-    body = '<section class="block"><h2>QA score per call</h2><div class="chart">' + trendSvg(pts) + '</div>' +
+    body = '<div class="cols"><div><section class="block"><h2>QA score per call</h2><div class="chart">' + trendSvg(pts) + '</div>' +
       (pts.length < 2 ? '<p class="muted small" style="margin-top:8px">Take another call to see your trend.</p>' : '') + '</section>' +
       (skills.length ? '<section class="block"><h2>Your skills</h2><p class="section-sub">Average score per scorecard item' + (weakest && skills.length > 1 ? '. Focus next on <b>' + esc(weakest.label) + '</b>.' : '.') + '</p><div class="card scores">' + skillRows + '</div></section>' : '') +
-      '<section class="block"><h2>History</h2>' + hist + '</section>';
+      '</div><div><section class="block"><h2>History</h2>' + hist + '</section></div></div>';
   }
   const avg = calls.length ? Math.round(calls.reduce((a, c) => a + c.qaScore, 0) / calls.length) : 0;
   const stats = '<div class="stats">' +
@@ -1351,7 +1424,7 @@ function settingsView() {
     row('#/onboarding', I.target, '', 'Role and focus', esc((me.role ? ROLE_NAMES[me.role] + ' · ' : '') + focus)) +
     '</div></section>' +
     '<div class="group" style="margin-top:22px"><button class="row-set" id="signout"><span class="row-ico red" aria-hidden="true">' + I.logout + '</span>' +
-    '<span class="danger" style="font-weight:600">Sign out<small>You can sign back in with the same email.</small></span></button></div>', 'settings');
+    '<span class="danger" style="font-weight:600">Sign out<small>You can sign back in with the same email.</small></span></button></div>', 'settings', 'narrow');
   $('#auto').addEventListener('change', (e) => store.set('autoSend', e.target.checked));
   $('#signout').addEventListener('click', async () => {
     if (!confirm('Sign out on this device?')) return;
@@ -1362,7 +1435,7 @@ function settingsView() {
 function proView(why) {
   const msg = why === 'pro_required' ? 'This call is part of Pro.' : why === 'daily_limit' ? freeUsedText(me.freeDailyLimit) : '';
   const benefit = (ico, title, text) => '<li><span class="row-ico gold" aria-hidden="true">' + ico + '</span><span><b>' + title + '</b><span>' + text + '</span></span></li>';
-  root().innerHTML = '<main><section class="hero pro-hero"><header class="top"><a class="icon-btn" href="#/scenarios" aria-label="Back">' + I.back + '</a></header>' +
+  root().innerHTML = shell('<section class="hero pro-hero"><header class="top"><a class="icon-btn" href="#/scenarios" aria-label="Back">' + I.back + '</a></header>' +
     '<span class="crown" aria-hidden="true">' + I.star + '</span><h1>CallReady Pro</h1>' +
     '<p class="sub">Practice the hard calls before they happen on the floor.</p>' +
     (me.isPro ? '<div class="pillbar">' + I.check + 'Your Pro plan is active' + (me.proUntil ? ' until ' + esc(proEndText(me.proUntil)) : '') + '</div>' : '') +
@@ -1373,8 +1446,7 @@ function proView(why) {
     benefit(I.phone, 'Unlimited calls', 'No daily cap. Repeat a call until your score shows you are ready.') +
     benefit(I.briefcase, 'Job interview practice', 'A recruiter interviews you for a bilingual support role, then scores your answers.') +
     '</ul>' +
-    (me.isPro ? '' : '<section class="block"><h2>How to get Pro</h2><div class="card pre">' + esc(me.proInstructions) + '</div></section>') +
-    '</main>';
+    (me.isPro ? '' : '<section class="block"><h2>How to get Pro</h2><div class="card pre">' + esc(me.proInstructions) + '</div></section>'), 'settings');
 }
 
 /* ---------- admin ---------- */
