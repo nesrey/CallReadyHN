@@ -499,7 +499,7 @@ async function render() {
     if (r.name !== 'login') { location.hash = '#/login'; return; }
     return loginView(vid);
   }
-  if (r.name === 'login') { location.hash = '#/scenarios'; return; }
+  if (r.name === 'login') { location.hash = '#/'; return; }
   if (!me) {
     root().innerHTML = loadingView();
     const stop = slowNotice();
@@ -507,7 +507,10 @@ async function render() {
     stop();
     if (vid !== viewId) return;
   }
-  if (!me.goal && r.name !== 'onboarding') { location.hash = '#/onboarding'; return; }
+  // Admins start in Administración; learners on the call list.
+  if (!r.name && me.isAdmin) { location.hash = '#/admin'; return; }
+  // Goal and level matter only for practicing, so the admin area does not ask for them.
+  if (!me.goal && r.name !== 'onboarding' && r.name !== 'admin') { location.hash = '#/onboarding'; return; }
   switch (r.name) {
     case 'onboarding': return onboardingView();
     case 'progress': return progressView(vid);
@@ -1020,13 +1023,22 @@ function proView(why) {
 const ADMIN_TABS = [['users', 'Usuarios'], ['usage', 'Uso'], ['scenarios', 'Escenarios'], ['settings', 'Ajustes']];
 
 function adminFrame(tab, inner) {
-  return '<main>' + backHeader('Administración', '#/settings') +
+  return '<main><header class="top" style="flex-wrap:wrap"><h1>Administración</h1>' +
+    '<a class="btn" href="#/scenarios" style="min-height:40px;padding:8px 14px">Ver como alumno</a>' +
+    '<button class="btn" data-signout style="min-height:40px;padding:8px 14px">Cerrar sesión</button></header>' +
     '<nav class="seg" aria-label="Secciones">' + ADMIN_TABS.map((t) => '<a href="#/admin/' + t[0] + '"' + (t[0] === tab ? ' aria-current="page"' : '') + '>' + t[1] + '</a>').join('') + '</nav>' +
     inner + '</main>';
 }
 
 async function adminView(tab, arg, vid) {
   if (!me.isAdmin) { location.hash = '#/scenarios'; return; }
+  // One listener on the app root survives the tab re-renders; the router's cleanup removes it.
+  const onSignOut = async (ev) => {
+    if (!ev.target.closest('[data-signout]')) return;
+    if (confirm('¿Cerrar sesión en este dispositivo?')) await sb.auth.signOut();
+  };
+  root().addEventListener('click', onSignOut);
+  cleanup = () => root().removeEventListener('click', onSignOut);
   const known = tab === 'scenario' ? 'scenarios' : tab;
   root().innerHTML = adminFrame(known, '<p class="muted" id="loading">Cargando…</p>');
   const fail = (e) => {
@@ -1263,7 +1275,7 @@ async function boot() {
     session = s;
     // Never await Supabase calls inside this callback; schedule the re-render instead.
     if (event === 'SIGNED_OUT' || (!s && was)) { me = null; setTimeout(() => go('#/login'), 0); }
-    else if (s && !was) { me = null; setTimeout(() => (parseHash().name === 'login' || !location.hash ? go('#/scenarios') : render()), 0); }
+    else if (s && !was) { me = null; setTimeout(() => (parseHash().name === 'login' || !location.hash ? go('#/') : render()), 0); }
   });
   window.addEventListener('hashchange', render);
   render();
