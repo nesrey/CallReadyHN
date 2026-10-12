@@ -539,7 +539,7 @@ function loginView() {
     '<button class="btn google" id="google">' + I.google + 'Continuar con Google</button>' +
     '<div class="divider">o con su correo</div>' +
     '<div id="step"></div>' +
-    '<p class="muted small" style="margin-top:18px">Si todavía no tiene una cuenta, se crea al entrar.</p></main>';
+    '<p class="muted small" style="margin-top:18px">Si todavía no tiene una cuenta, se crea al entrar. Consulte la <a href="privacidad.html">política de privacidad</a>.</p></main>';
   loginNotice = '';
 
   $('#google').addEventListener('click', async () => {
@@ -991,6 +991,7 @@ function settingsView() {
     '<div class="row-set"><span>Correo<small>' + esc(me.email) + '</small></span></div>' +
     '<a class="row-set" href="#/pro" style="color:inherit;text-decoration:none"><span>Plan<small>' + esc(planText()) + '</small></span></a>' +
     (me.isAdmin ? '<a class="row-set" href="#/admin" style="color:inherit;text-decoration:none"><span>Administración<small>Usuarios, uso, escenarios y ajustes.</small></span></a>' : '') +
+    '<a class="row-set" href="privacidad.html" style="color:inherit;text-decoration:none"><span>Privacidad<small>Qué datos se guardan y cómo pedir que se eliminen.</small></span></a>' +
     '<button class="row-set" id="signout" style="width:100%;text-align:left"><span>Cerrar sesión<small>Puede volver a entrar con el mismo correo.</small></span></button></section>' +
     '<section class="block"><h2>Práctica</h2>' +
     '<label class="row-set"><span>Enviar al terminar de hablar<small>Si se desactiva, puede revisar el texto antes de enviarlo.</small></span><input class="sw" type="checkbox" id="auto" role="switch"' + (autoSend() ? ' checked' : '') + '></label>' +
