@@ -638,6 +638,15 @@ function turnRetryDelay(code, retryAfter, alreadyRetried) {
   const sec = Number(retryAfter);
   return Math.min(5, Math.max(1, Number.isFinite(sec) && sec > 0 ? sec : 3)) * 1000;
 }
+// Errors after which the call can't take more turns (out of sync with the server, or already over).
+function callCantContinue(code) {
+  return code === 'turn_conflict' || code === 'call_over';
+}
+// The mic, text box and Send are off while a reply is on its way or playing, after the call ended, and once the call
+// can't continue (until the agent ends it or leaves).
+function inputBlocked(s) {
+  return !!(s.busy || s.speaking || s.ended || s.cantContinue);
+}
 // "just now", "5 min ago", "3 h ago", "2 days ago", then a date.
 function timeAgo(iso, now) {
   const s = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 1000));
@@ -1124,7 +1133,7 @@ async function callView(id, vid) {
   const rate = sc.temperament === 'calm' ? 0.97 : sc.temperament === 'demanding' ? 1.03 : 1.08;
   const initials = sc.personaName.replace(/^(Mr|Mrs|Ms|Dr)\.\s*/i, '').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
   const secure = window.isSecureContext;
-  const state = { history: [], busy: false, speaking: false, listening: false, ended: false, answered: false, started: false, rec: null, startTs: 0 };
+  const state = { history: [], busy: false, speaking: false, listening: false, ended: false, cantContinue: false, answered: false, started: false, rec: null, startTs: 0 };
   const greetHint = sc.aiRole === 'interviewer'
     ? 'Answer the phone, e.g. "Hello, this is Ana speaking."'
     : 'Answer with your greeting, e.g. "Thank you for calling ' + sc.company + ', my name is Ana. How can I help you?"';
@@ -1167,7 +1176,7 @@ async function callView(id, vid) {
   function updateUi() {
     const mic = el('#mic'), txt = el('#txt'), send = el('#send');
     if (!mic) return;
-    const blocked = state.busy || state.speaking || state.ended;
+    const blocked = inputBlocked(state);
     mic.disabled = blocked || !SR || !secure;
     mic.classList.toggle('on', state.listening);
     mic.setAttribute('aria-label', state.listening ? 'Stop' : 'Talk');
@@ -1249,7 +1258,9 @@ async function callView(id, vid) {
       if (e.code === 'pro_required' || e.code === 'daily_limit') { cleanup(); location.hash = '#/pro?why=' + e.code; return; }
       if (e.code === 'unauthorized') { cleanup(); return; }
       if (e.code === 'session_token_cap' && agentTurns() >= 3) { showNotice(errMsg(e)); await finishCall(); return; }
-      if (e.code === 'turn_conflict' || e.code === 'call_over') {
+      if (callCantContinue(e.code)) {
+        // No more turns from here: only ending the call (for a score) or leaving resolves it.
+        state.cantContinue = true;
         setStatus('The call can\'t continue');
         showNotice(errMsg(e), agentTurns() >= 3
           ? [{ label: 'End call and get your score', fn: finishCall }, { label: 'Leave without a score', fn: leave }]
@@ -1266,7 +1277,7 @@ async function callView(id, vid) {
 
   async function sendAgent(raw) {
     const text = String(raw || '').trim().slice(0, 500);
-    if (!text || state.busy || state.speaking || state.ended) return;
+    if (!text || inputBlocked(state)) return;
     if (!state.history.length) { const h = el('#hint'); if (h) h.innerHTML = ''; hint(); }
     state.history.push({ role: 'agent', text: text });
     addBubble('a', text);
@@ -1284,7 +1295,7 @@ async function callView(id, vid) {
   };
 
   function startMic() {
-    if (!SR || !secure || state.busy || state.speaking || state.ended) return;
+    if (!SR || !secure || inputBlocked(state)) return;
     hideNotice();
     const r = new SR();
     r.lang = 'en-US'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;

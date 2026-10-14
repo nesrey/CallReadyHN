@@ -9,7 +9,7 @@ assert.ok(block, "LOGIC markers not found in app/index.html");
 
 const L = new Function(
   `${block.slice(block.indexOf("*/") + 2)}
-   return { computeStreak, canStartCall, sortScenarios, formatTime, trendPoints, dateKey, freeUsedText, verdict, markQuotes, timeAgo, turnRetryDelay };`,
+   return { computeStreak, canStartCall, sortScenarios, formatTime, trendPoints, dateKey, freeUsedText, verdict, markQuotes, timeAgo, turnRetryDelay, callCantContinue, inputBlocked };`,
 )() as Record<string, any>;
 
 const d = (s: string) => new Date(s); // local-time dates, e.g. "2026-10-11T12:00:00"
@@ -127,6 +127,23 @@ test("turnRetryDelay: one automatic retry, only while the server is still workin
   for (const c of ["turn_conflict", "llm_busy", "llm_unavailable", "rate_limited", "network", "call_over"]) {
     assert.equal(L.turnRetryDelay(c, "3", false), null, c);
   }
+});
+
+test("out of sync: the call stops taking turns; other errors leave Try again", () => {
+  assert.equal(L.callCantContinue("turn_conflict"), true);
+  assert.equal(L.callCantContinue("call_over"), true);
+  for (const c of ["turn_in_progress", "llm_busy", "llm_unavailable", "rate_limited", "network", "session_token_cap"]) {
+    assert.equal(L.callCantContinue(c), false, c);
+  }
+});
+
+test("inputBlocked: the mic, text box and Send stay off once the call can't continue", () => {
+  const idle = { busy: false, speaking: false, ended: false, cantContinue: false };
+  assert.equal(L.inputBlocked(idle), false, "the agent's turn");
+  for (const k of ["busy", "speaking", "ended", "cantContinue"]) {
+    assert.equal(L.inputBlocked({ ...idle, [k]: true }), true, k);
+  }
+  assert.equal(L.inputBlocked({ busy: false, speaking: false, ended: false }), false, "older state without the flag");
 });
 
 test("formatTime pads minutes and seconds", () => {

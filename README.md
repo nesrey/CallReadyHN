@@ -165,7 +165,9 @@ the caller said, rewrite an earlier answer, or add a line after the caller hung 
   still holds an unexpired lease, so an expired request can never write, overwrite or release a newer one's lease.
 - A repeated request for a turn that was already answered (same line) gets the stored reply without asking the AI
   again; a different line for an answered turn gets `409 turn_conflict`. A request while another one is running gets
-  `409 turn_in_progress` with `Retry-After`; the page waits and retries once on its own, then shows a button.
+  `409 turn_in_progress` with `Retry-After`; the page waits and retries once on its own, then shows a button. After
+  `turn_conflict` (or `call_over`) the page turns off the mic, text box and Send for the rest of the call and offers
+  only to end it for a score (with at least 3 agent lines) or to leave.
 - A line the AI never answered (e.g. the AI failed, then the agent hung up) is not part of the transcript and is not
   scored.
 - An unscored call can't be continued or scored 24 hours after it started. Its partial transcript is then deleted
@@ -211,7 +213,7 @@ the caller said, rewrite an earlier answer, or add a line after the caller hung 
 ## 9. Tests
 
 ```bash
-npm test          # 131 tests
+npm test          # 133 tests
 npm run typecheck
 ```
 
