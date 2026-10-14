@@ -513,6 +513,50 @@ details.review[open] summary h2::after{content:" ▾"}
 }
 @media (max-width:380px){ .score{grid-template-columns:116px 1fr 24px} h1{font-size:25px} .hero h1{font-size:27px} }
 @media (max-width:560px){ .grid2{grid-template-columns:1fr} .stats.four{grid-template-columns:repeat(2,1fr)} }
+
+/* Dark mode (admin preview): the same layout with dark surfaces. The call screen is dark already. */
+html[data-theme=dark]{
+  color-scheme:dark;
+  --paper:#0B1622; --card:#14222F; --ink:#E4EBF2; --muted:#9AABBC; --line:#24364A; --line-2:#2F4560;
+  --cobalt:#3A7AE0; --cobalt-d:#2A63C4; --cobalt-50:#162D4A; --cobalt-100:#1D3B61;
+  --maize-50:#33270F; --good:#45C08A; --good-50:#11301F; --bad:#E06A6A; --bad-50:#361B1D;
+  --sh-1:0 1px 2px rgba(0,0,0,.3),0 2px 8px rgba(0,0,0,.25);
+  --sh-2:0 2px 4px rgba(0,0,0,.35),0 10px 24px rgba(0,0,0,.35);
+  --sh-btn:0 1px 2px rgba(0,0,0,.35),0 6px 16px rgba(21,86,192,.35);
+}
+html[data-theme=dark] body:not(.in-call){background:radial-gradient(900px 420px at 50% -160px,#13284A 0%,rgba(19,40,74,0) 70%),var(--paper)}
+html[data-theme=dark] .cat-support,html[data-theme=dark] .cat-service,html[data-theme=dark] .lvl-B1{background:#16304F;color:#8DB6F5}
+html[data-theme=dark] .cat-sales,html[data-theme=dark] .temper-demanding{background:#3A2C10;color:#F2C46B}
+html[data-theme=dark] .cat-interview,html[data-theme=dark] .temper-calm,html[data-theme=dark] .lvl-A2,html[data-theme=dark] .chip.fit{background:#11331F;color:#72D5A6}
+html[data-theme=dark] .cat-tech{background:#2A2250;color:#B7A6F2}
+html[data-theme=dark] .cat-collections,html[data-theme=dark] .temper-furious,html[data-theme=dark] .pill.off{background:#3A1C1C;color:#F09A9A}
+html[data-theme=dark] .chip,html[data-theme=dark] .temper,html[data-theme=dark] .pill{background:#1F3044}
+html[data-theme=dark] .chip.pro,html[data-theme=dark] .lvl-B2,html[data-theme=dark] .pill.pro,html[data-theme=dark] .side-plan{background:#3A2C10;color:#F2C46B}
+html[data-theme=dark] .sc.locked .sc-go,html[data-theme=dark] .why .mk,html[data-theme=dark] .row-ico.gold,
+html[data-theme=dark] .crit-body .tip .mk,html[data-theme=dark] .strengths .mk{color:#F2C46B}
+html[data-theme=dark] .sc.locked .sc-main b{color:#B4C3D2}
+html[data-theme=dark] .note{border-color:#5A4718}
+html[data-theme=dark] .note.err{border-color:#6A2E2E}
+html[data-theme=dark] .note.ok{border-color:#1F5A3C}
+html[data-theme=dark] .said q{color:#E5A3A3}
+html[data-theme=dark] .better q{color:#7FDCB0}
+html[data-theme=dark] .empty{border-color:#3A506A}
+html[data-theme=dark] a.row-set:hover,html[data-theme=dark] button.row-set:hover,html[data-theme=dark] .tbl th,
+html[data-theme=dark] .tbl tbody tr:hover td,html[data-theme=dark] details.crit summary:hover,html[data-theme=dark] .acct{background:#1A2B3D}
+html[data-theme=dark] .tabs-in{background:rgba(20,34,47,.88);border-color:rgba(47,69,96,.9);box-shadow:0 10px 30px rgba(0,0,0,.45)}
+html[data-theme=dark] .side{background:rgba(15,27,39,.85)}
+html[data-theme=dark] .seg{background:var(--card)}
+html[data-theme=dark] .side-nav a:hover{background:#1A2B3D;color:var(--ink)}
+html[data-theme=dark] .side-out:hover{background:#361B1D}
+html[data-theme=dark] .chev,html[data-theme=dark] .chev-d svg,html[data-theme=dark] .side-label{color:#7488A0}
+html[data-theme=dark] input.sw:not(:checked){background:#3A506A}
+html[data-theme=dark] .in,html[data-theme=dark] .desk-close{background:#0F1B27}
+html[data-theme=dark] .tl mark{background:rgba(242,179,61,.3);color:var(--ink)}
+/* Charts draw with SVG attributes; CSS wins over those. */
+html[data-theme=dark] svg [stroke="#E1E7EE"]{stroke:var(--line)}
+html[data-theme=dark] svg [fill="#5A6B7D"]{fill:var(--muted)}
+html[data-theme=dark] svg [fill="#0F2438"]{fill:var(--ink)}
+html[data-theme=dark] svg circle[stroke="#fff"]{stroke:var(--card)}
 </style>
 </head>
 <body>
@@ -673,6 +717,15 @@ const store = {
   set(k, v) { try { localStorage.setItem('callready.' + k, JSON.stringify(v)); } catch { /* storage full or blocked */ } },
 };
 const autoSend = () => store.get('autoSend', true) !== false;
+/** Dark mode is an admin preview for now. Before /me answers, the device's saved choice avoids a light flash;
+ *  once it does, only an admin keeps it. */
+function applyTheme() {
+  const dark = store.get('dark', false) === true && (me === null || me.isAdmin === true);
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+}
+const darkSwitch = () => '<label class="row-set"><span class="row-ico" aria-hidden="true">' + I.moon + '</span><span>Dark mode<small>Admin preview: only admins can see this for now.</small></span>' +
+  '<input class="sw" type="checkbox" id="dark" role="switch"' + (store.get('dark', false) === true ? ' checked' : '') + '></label>';
+const bindDarkSwitch = () => $('#dark').addEventListener('change', (e) => { store.set('dark', e.target.checked); applyTheme(); });
 
 function uuid() {
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -710,6 +763,7 @@ const I = {
   target: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>',
   send: '<svg class="i" viewBox="0 0 24 24"><path d="M5 12l14-7-5 15-3-6z"/></svg>',
   admin: '<svg class="i" viewBox="0 0 24 24"><path d="M4 21V10M4 6V3M12 21v-7M12 10V3M20 21v-5M20 12V3M2 10h4M10 10h4M18 12h4"/></svg>',
+  moon: '<svg class="i" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>',
   home: '<svg class="i" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>',
   desk: '<svg class="i" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
   google: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 0 1 0-4.4V7H2.1a11 11 0 0 0 0 10z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>',
@@ -753,6 +807,7 @@ function errMsg(e) {
 let sb = null;        // Supabase client (sign-in only; data goes through our server)
 let session = null;   // current Supabase session, or null
 let me = null;        // GET /me
+applyTheme();
 const callCache = {}; // scorecard just generated, so the results page does not refetch it
 
 async function authHeader() {
@@ -784,6 +839,7 @@ async function api(path, body, method) {
 
 async function loadMe() {
   me = await api('/me');
+  applyTheme();
   return me;
 }
 
@@ -1508,9 +1564,11 @@ function settingsView() {
     '<label class="row-set"><span class="row-ico" aria-hidden="true">' + I.send + '</span><span>Send when I stop talking<small>Turn off to review the text before sending it.</small></span><input class="sw" type="checkbox" id="auto" role="switch"' + (autoSend() ? ' checked' : '') + '></label>' +
     row('#/onboarding', I.target, '', 'Role and focus', esc((me.role ? ROLE_NAMES[me.role] + ' · ' : '') + focus)) +
     '</div></section>' +
+    (me.isAdmin ? '<section class="block"><h2>Appearance</h2><div class="group">' + darkSwitch() + '</div></section>' : '') +
     '<div class="group" style="margin-top:22px"><button class="row-set" id="signout"><span class="row-ico red" aria-hidden="true">' + I.logout + '</span>' +
     '<span class="danger" style="font-weight:600">Sign out<small>You can sign back in with the same email.</small></span></button></div>', 'settings', 'narrow');
   $('#auto').addEventListener('change', (e) => store.set('autoSend', e.target.checked));
+  if (me.isAdmin) bindDarkSwitch();
   $('#signout').addEventListener('click', async () => {
     if (!confirm('Sign out on this device?')) return;
     await sb.auth.signOut();
@@ -1823,7 +1881,9 @@ async function adminSettingsView(vid) {
     '<div class="field"><label for="lim">Free calls per day</label><input class="in" id="lim" type="number" min="0" max="100" step="1" value="' + s.freeDailyLimit + '" style="max-width:140px"><small>For accounts without Pro. Scenarios marked Pro always need Pro.</small></div>' +
     '<div class="field"><label for="ins">How to get Pro (shown to learners)</label><textarea class="in" id="ins" maxlength="1000" style="min-height:140px">' + esc(s.proInstructions) + '</textarea><small>For example, how to pay and who to tell. Then turn on Pro for them under Users.</small></div>' +
     '<div class="note err" id="st-err" role="alert" hidden></div><div class="note ok" id="st-ok" role="status" hidden>Settings saved.</div>' +
-    '<button class="btn primary" id="st-save">Save</button></form>');
+    '<button class="btn primary" id="st-save">Save</button></form>' +
+    '<section class="block" style="margin-top:28px"><h2>Appearance</h2><div class="group">' + darkSwitch() + '</div></section>');
+  bindDarkSwitch();
   $('#stf').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const err = $('#st-err'), ok = $('#st-ok'), b = $('#st-save');
