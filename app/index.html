@@ -631,6 +631,13 @@ function markQuotes(text, quotes) {
   if (pos < text.length) out.push({ text: text.slice(pos), hit: false });
   return out;
 }
+// The server says another request is still working on this call: wait and try once more on our own (never twice,
+// so a stuck call ends with a button instead of a loop). Returns the wait in ms, or null for "don't retry".
+function turnRetryDelay(code, retryAfter, alreadyRetried) {
+  if (code !== 'turn_in_progress' || alreadyRetried) return null;
+  const sec = Number(retryAfter);
+  return Math.min(5, Math.max(1, Number.isFinite(sec) && sec > 0 ? sec : 3)) * 1000;
+}
 // "just now", "5 min ago", "3 h ago", "2 days ago", then a date.
 function timeAgo(iso, now) {
   const s = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 1000));
@@ -719,6 +726,8 @@ const ERR = {
   not_enough_speech: 'This call was too short to score. Handle at least a few exchanges with the caller.',
   network: 'Cannot reach the server. Check your internet connection.',
   call_over: 'This call has already ended.',
+  turn_in_progress: 'Still working on your last reply. Try again in a moment.',
+  turn_conflict: 'This call got out of sync with the server, so it can\'t continue.',
   invalid_request: 'Something went wrong with the request. Try again.',
   unauthorized: 'Your session expired. Sign in again.',
   pro_required: 'This call is part of Pro.',
@@ -1202,7 +1211,10 @@ async function callView(id, vid) {
     el('#txt').focus({ preventScroll: true });
   }
 
-  async function requestTurn() {
+  const leave = () => { cleanup(); location.hash = '#/scenarios'; };
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function requestTurn(retried) {
     state.busy = true; updateUi(); hideNotice();
     setStatus(who + ' is replying…');
     try {
@@ -1226,13 +1238,27 @@ async function callView(id, vid) {
       const t = el('#txt'); if (t && !state.busy) { updateUi(); t.focus({ preventScroll: true }); }
     } catch (e) {
       if (state.ended) return;
+      const wait = turnRetryDelay(e.code, e.retryAfter, retried === true);
+      if (wait !== null) {
+        // The server is still on this same reply (e.g. a retried request): resending the same line gets it, once.
+        await pause(wait);
+        if (state.ended) return;
+        return await requestTurn(true);
+      }
       state.busy = false; state.speaking = false;
       if (e.code === 'pro_required' || e.code === 'daily_limit') { cleanup(); location.hash = '#/pro?why=' + e.code; return; }
       if (e.code === 'unauthorized') { cleanup(); return; }
       if (e.code === 'session_token_cap' && agentTurns() >= 3) { showNotice(errMsg(e)); await finishCall(); return; }
+      if (e.code === 'turn_conflict' || e.code === 'call_over') {
+        setStatus('The call can\'t continue');
+        showNotice(errMsg(e), agentTurns() >= 3
+          ? [{ label: 'End call and get your score', fn: finishCall }, { label: 'Leave without a score', fn: leave }]
+          : [{ label: 'Leave the call', fn: leave }], true);
+        return;
+      }
       setStatus('Connection problem');
       // A failed reply leaves the agent's last line in place, so "Try again" resends it.
-      showNotice(errMsg(e), [{ label: 'Try again', fn: requestTurn }], true);
+      showNotice(errMsg(e), [{ label: 'Try again', fn: () => requestTurn() }], true);
     } finally {
       if (!state.ended) { state.busy = false; updateUi(); }
     }
@@ -1304,20 +1330,23 @@ async function callView(id, vid) {
     if (agentTurns() < 3) { location.hash = '#/scenarios'; return; }
     await generateFeedback();
   }
-  async function generateFeedback() {
+  async function generateFeedback(retried) {
     overlay('<div class="spinner" aria-hidden="true"></div><p>Scoring your call…</p>');
     try {
       const fb = await api('/session/feedback', { sessionId: sessionId, scenarioId: sc.id, history: state.history });
       callCache[fb.callId] = {
         id: fb.callId, scenarioId: sc.id, title: sc.title, callType: sc.callType, temperament: sc.temperament,
         startedAt: new Date(state.startTs).toISOString(), durationSec: Math.round((Date.now() - state.startTs) / 1000),
-        qaScore: fb.qaScore, feedback: fb, transcript: state.history.slice(),
+        // Show exactly what was scored: the server's transcript, not this page's copy.
+        qaScore: fb.qaScore, feedback: fb, transcript: fb.transcript || state.history.slice(),
       };
       location.hash = '#/results/' + fb.callId;
     } catch (e) {
-      const actions = e.code === 'not_enough_speech' || e.code === 'session_token_cap' || e.code === 'not_found'
+      const wait = turnRetryDelay(e.code, e.retryAfter, retried === true);
+      if (wait !== null) { await pause(wait); return generateFeedback(true); }
+      const actions = e.code === 'not_enough_speech' || e.code === 'session_token_cap' || e.code === 'not_found' || e.code === 'call_over'
         ? [{ label: 'Back to calls', fn: () => { location.hash = '#/scenarios'; } }]
-        : [{ label: 'Try again', fn: generateFeedback }, { label: 'Leave without saving', fn: () => { location.hash = '#/scenarios'; } }];
+        : [{ label: 'Try again', fn: () => generateFeedback() }, { label: 'Leave without saving', fn: () => { location.hash = '#/scenarios'; } }];
       overlay('<p>' + esc(errMsg(e)) + '</p>', actions);
     }
   }

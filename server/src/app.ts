@@ -139,6 +139,7 @@ export function createApp(deps: AppDeps, opts: { siteDir: string }) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof ApiError) {
+      if (err.retryAfterSec) res.setHeader("Retry-After", String(err.retryAfterSec));
       res.status(err.status).json({ error: { code: err.code, message: err.message } });
       return;
     }

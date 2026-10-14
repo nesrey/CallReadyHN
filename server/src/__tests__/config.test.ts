@@ -25,6 +25,13 @@ test("config: admins and time zone", () => {
   assert.throws(() => loadConfig({ ANTHROPIC_API_KEY: "k", TIMEZONE: "Mars/Base" }), /TIMEZONE/);
 });
 
+test("config: transcripts are recorded by the server unless the emergency mode is set", () => {
+  assert.equal(loadConfig({ ANTHROPIC_API_KEY: "k" }).transcriptMode, "server");
+  assert.equal(loadConfig({ ANTHROPIC_API_KEY: "k", TRANSCRIPT_MODE: " Client " }).transcriptMode, "client");
+  assert.throws(() => loadConfig({ ANTHROPIC_API_KEY: "k", TRANSCRIPT_MODE: "browser" }), /TRANSCRIPT_MODE/);
+  assert.equal(loadConfig({ ANTHROPIC_API_KEY: "k" }).leaseSeconds, 90);
+});
+
 test("config: accounts need Supabase and the database", () => {
   const env = {
     SUPABASE_URL: "https://abcd1234.supabase.co/",

@@ -4,7 +4,7 @@ import type { Message } from "../types.js";
 import { DB, SCHEMA_SQL } from "./schema.js";
 import type {
   AdminUser, CallDetail, CallRow, CallSummary, OverviewCounts, Profile, RecentCall, RecentUser, Role, ScenarioCount, Settings,
-  SkillAverage, Store, StoredScenario, UsageRow,
+  SkillAverage, Store, StoredScenario, TurnCommit, UsageRow,
 } from "./store.js";
 
 /** The part of node-postgres' Pool (and PGlite, used in tests) this store needs. */
@@ -58,6 +58,20 @@ function toScenario(r: Row): StoredScenario {
     behaviorNotes: String(r.behavior_notes ?? ""),
     enabled: r.enabled === true,
     sortOrder: num(r.sort_order),
+  };
+}
+
+function toCall(r: Row): CallRow {
+  return {
+    id: String(r.id),
+    userId: String(r.user_id),
+    scenarioId: String(r.scenario_id),
+    startedAt: date(r.started_at),
+    turns: num(r.turns),
+    tokens: num(r.tokens),
+    finishedAt: dateOrNull(r.finished_at),
+    serverTranscript: r.server_transcript === true,
+    callerEndedAt: dateOrNull(r.caller_ended_at),
   };
 }
 
@@ -180,23 +194,81 @@ export class PgStore implements Store {
 
   async getCall(id: string): Promise<CallRow | null> {
     const { rows } = await this.db.query(`select * from ${DB}.calls where id = $1`, [id]);
-    const r = rows[0];
-    if (!r) return null;
-    return {
-      id: String(r.id),
-      userId: String(r.user_id),
-      scenarioId: String(r.scenario_id),
-      startedAt: date(r.started_at),
-      turns: num(r.turns),
-      tokens: num(r.tokens),
-      finishedAt: dateOrNull(r.finished_at),
-    };
+    return rows[0] ? toCall(rows[0]) : null;
   }
 
-  async createCall(c: { id: string; userId: string; scenarioId: string }): Promise<void> {
-    await this.db.query(`insert into ${DB}.calls (id, user_id, scenario_id) values ($1, $2, $3)`, [
-      c.id, c.userId, c.scenarioId,
-    ]);
+  async createCall(c: { id: string; userId: string; scenarioId: string; serverTranscript?: boolean }): Promise<boolean> {
+    const { rows } = await this.db.query(
+      `insert into ${DB}.calls (id, user_id, scenario_id, server_transcript) values ($1, $2, $3, $4)
+       on conflict (id) do nothing returning id`,
+      [c.id, c.userId, c.scenarioId, c.serverTranscript === true],
+    );
+    return rows.length > 0;
+  }
+
+  async acquireLease(callId: string, userId: string, token: string, seconds: number): Promise<CallRow | null> {
+    // One statement: Postgres re-checks the WHERE against the newest row version, so two requests can't both win.
+    const { rows } = await this.db.query(
+      `update ${DB}.calls set lease_token = $3, lease_until = now() + $4::int * interval '1 second'
+       where id = $1 and user_id = $2 and finished_at is null and (lease_until is null or lease_until <= now())
+       returning *`,
+      [callId, userId, token, Math.round(seconds)],
+    );
+    return rows[0] ? toCall(rows[0]) : null;
+  }
+
+  async releaseLease(callId: string, userId: string, token: string, tokens: number): Promise<void> {
+    await this.db.query(
+      `update ${DB}.calls set tokens = tokens + $4,
+         lease_token = case when lease_token = $3 then null else lease_token end,
+         lease_until = case when lease_token = $3 then null else lease_until end
+       where id = $1 and user_id = $2`,
+      [callId, userId, token, Math.max(0, Math.round(tokens))],
+    );
+  }
+
+  async commitTurn(t: TurnCommit): Promise<boolean> {
+    // The turn rows go in only if this request still holds an unexpired lease: an expired request never writes.
+    const { rows } = await this.db.query<{ n: unknown }>(
+      `with u as (
+         update ${DB}.calls set tokens = tokens + $4, turns = turns + 1,
+           caller_ended_at = case when $5::boolean then now() else caller_ended_at end,
+           lease_token = null, lease_until = null
+         where id = $1 and user_id = $2 and lease_token = $3 and lease_until > now() and finished_at is null
+         returning id
+       ), ins as (
+         insert into ${DB}.call_turns (call_id, position, role, text)
+         select u.id, t.p, t.r, t.x from u, unnest($6::smallint[], $7::text[], $8::text[]) as t(p, r, x)
+       )
+       select count(*) as n from u`,
+      [
+        t.callId, t.userId, t.leaseToken, Math.max(0, Math.round(t.tokens)), t.ended,
+        [t.position, t.position + 1], ["agent", "customer"], [t.agentText, t.callerText],
+      ],
+    );
+    return num(rows[0]?.n) > 0;
+  }
+
+  async getTurns(callId: string, userId: string): Promise<Message[]> {
+    const { rows } = await this.db.query(
+      `select t.role, t.text from ${DB}.call_turns t join ${DB}.calls c on c.id = t.call_id
+       where t.call_id = $1 and c.user_id = $2 order by t.position`,
+      [callId, userId],
+    );
+    return rows.map((r) => ({ role: r.role as Message["role"], text: String(r.text) }));
+  }
+
+  async purgeAbandonedTurns(before: Date): Promise<number> {
+    const { rows } = await this.db.query<{ n: unknown }>(
+      `with gone as (
+         delete from ${DB}.call_turns t using ${DB}.calls c
+         where t.call_id = c.id and c.finished_at is null and c.started_at < $1
+         returning t.call_id
+       )
+       select count(distinct call_id) as n from gone`,
+      [before],
+    );
+    return num(rows[0]?.n);
   }
 
   async recordUsage(callId: string, tokens: number, turn: boolean): Promise<void> {
@@ -214,13 +286,18 @@ export class PgStore implements Store {
     return num(rows[0]?.n);
   }
 
-  async saveFeedback(callId: string, durationSec: number, qaScore: number, f: FeedbackOutput, transcript: Message[]): Promise<boolean> {
+  async saveFeedback(
+    callId: string, durationSec: number, qaScore: number, f: FeedbackOutput, transcript: Message[] | null, leaseToken: string | null = null,
+  ): Promise<boolean> {
     const idx = (a: unknown[]) => a.map((_, i) => i);
+    const lines = transcript ?? [];
     // One statement, so the call row and all its child rows are written together or not at all.
     const { rows } = await this.db.query<{ n: unknown }>(
       `with c as (
-         update ${DB}.calls set finished_at = now(), duration_sec = $2, qa_score = $3, summary = $4
+         update ${DB}.calls set finished_at = now(), duration_sec = $2, qa_score = $3, summary = $4,
+           lease_token = null, lease_until = null
          where id = $1 and finished_at is null
+           and ($22::uuid is null or (lease_token = $22::uuid and lease_until > now()))
          returning id
        ), crit as (
          insert into ${DB}.call_criteria (call_id, position, key, score, evidence, tip)
@@ -247,7 +324,8 @@ export class PgStore implements Store {
         idx(f.strengths), f.strengths,
         idx(f.moments), f.moments.map((m) => m.said), f.moments.map((m) => m.better), f.moments.map((m) => m.why),
         idx(f.phrases), f.phrases.map((p) => p.phrase), f.phrases.map((p) => p.whenToUse),
-        idx(transcript), transcript.map((m) => m.role), transcript.map((m) => m.text),
+        idx(lines), lines.map((m) => m.role), lines.map((m) => m.text),
+        leaseToken,
       ],
     );
     return num(rows[0]?.n) > 0;

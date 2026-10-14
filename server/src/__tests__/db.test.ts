@@ -150,6 +150,81 @@ test("db: admin user list, search, Pro and usage", async () => {
   assert.equal(usage[0]!.qa, 72);
 });
 
+test("db: existing calls become legacy calls; new columns are added once and safely", async () => {
+  const db = new PGlite();
+  const store = new PgStore(db);
+  await store.migrate();
+  await store.seedScenarios(loadScenariosFromDisk());
+  await store.touchProfile(U1, "ana@example.com");
+  await db.query(`insert into callready_v2.calls (id, user_id, scenario_id) values ($1, $2, 'service-late-fee')`, [C1, U1]);
+  await store.migrate(); // the next start runs the same script again
+  const c = (await store.getCall(C1))!;
+  assert.equal(c.serverTranscript, false, "a row from before the change keeps the browser transcript");
+  assert.equal(c.callerEndedAt, null);
+  assert.equal(await store.createCall({ id: C2, userId: U1, scenarioId: "tech-wifi-down", serverTranscript: true }), true);
+  assert.equal((await store.getCall(C2))!.serverTranscript, true);
+  assert.equal(await store.createCall({ id: C2, userId: U2, scenarioId: "tech-wifi-down" }), false, "an existing id is never overwritten");
+  assert.equal((await store.getCall(C2))!.userId, U1);
+});
+
+test("db: leases are fenced by their token; an expired holder can't write or release a newer lease", async () => {
+  const store = await freshStore();
+  await store.touchProfile(U1, "ana@example.com");
+  await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee", serverTranscript: true });
+  const old = "00000000-0000-4000-8000-000000000001";
+  const fresh = "00000000-0000-4000-8000-000000000002";
+  const turn = (token: string, position: number) => ({
+    callId: C1, userId: U1, leaseToken: token, position, agentText: `agent ${position}`, callerText: `caller ${position}`, tokens: 100, ended: false,
+  });
+
+  assert.ok(await store.acquireLease(C1, U1, old, -1), "the old request's lease has run out");
+  assert.ok(await store.acquireLease(C1, U1, fresh, 90), "so a newer request takes the call");
+  assert.equal(await store.acquireLease(C1, U1, "00000000-0000-4000-8000-000000000003", 90), null, "one holder at a time");
+  assert.equal(await store.commitTurn(turn(old, 0)), false, "the expired request can't store its turn");
+  await store.releaseLease(C1, U1, old, 50);
+  assert.equal(await store.acquireLease(C1, U1, "00000000-0000-4000-8000-000000000004", 90), null, "nor release the newer lease");
+  assert.equal((await store.getCall(C1))!.tokens, 50, "but its tokens are still counted");
+
+  assert.equal(await store.commitTurn(turn(fresh, 0)), true);
+  assert.equal(await store.commitTurn(turn(fresh, 2)), false, "a lease is used up by its commit");
+  assert.deepEqual(await store.getTurns(C1, U1), [{ role: "agent", text: "agent 0" }, { role: "customer", text: "caller 0" }]);
+  const c = (await store.getCall(C1))!;
+  assert.equal(c.turns, 1);
+  assert.equal(c.tokens, 150);
+  assert.equal(await store.acquireLease(C1, U2, fresh, 90), null, "only the owner can take a call");
+});
+
+test("db: a turn is stored completely or not at all", async () => {
+  const store = await freshStore();
+  await store.touchProfile(U1, "ana@example.com");
+  await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee", serverTranscript: true });
+  const t1 = "00000000-0000-4000-8000-000000000001";
+  assert.ok(await store.acquireLease(C1, U1, t1, 90));
+  await store.commitTurn({ callId: C1, userId: U1, leaseToken: t1, position: 0, agentText: "a", callerText: "c", tokens: 10, ended: false });
+  const t2 = "00000000-0000-4000-8000-000000000002";
+  assert.ok(await store.acquireLease(C1, U1, t2, 90));
+  // Position 0 is taken: the insert fails, and the counters must not move either.
+  await assert.rejects(store.commitTurn({ callId: C1, userId: U1, leaseToken: t2, position: 0, agentText: "x", callerText: "y", tokens: 10, ended: true }));
+  const c = (await store.getCall(C1))!;
+  assert.equal(c.turns, 1);
+  assert.equal(c.tokens, 10);
+  assert.equal(c.callerEndedAt, null);
+  assert.equal((await store.getTurns(C1, U1)).length, 2);
+});
+
+test("db: scoring with a lease only saves while the lease is held, and frees the call", async () => {
+  const store = await freshStore();
+  await store.touchProfile(U1, "ana@example.com");
+  await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee", serverTranscript: true });
+  const stale = "00000000-0000-4000-8000-000000000001";
+  assert.ok(await store.acquireLease(C1, U1, stale, -1));
+  assert.equal(await store.saveFeedback(C1, 60, 60, fb(), null, stale), false, "an expired lease can't save");
+  const live = "00000000-0000-4000-8000-000000000002";
+  assert.ok(await store.acquireLease(C1, U1, live, 90));
+  assert.equal(await store.saveFeedback(C1, 60, 60, fb(), null, live), true);
+  assert.equal((await store.getCallDetail(U1, C1))!.qaScore, 60);
+});
+
 test("db: settings default and update", async () => {
   const store = await freshStore();
   const s = await store.getSettings();

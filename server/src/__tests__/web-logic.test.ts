@@ -9,7 +9,7 @@ assert.ok(block, "LOGIC markers not found in app/index.html");
 
 const L = new Function(
   `${block.slice(block.indexOf("*/") + 2)}
-   return { computeStreak, canStartCall, sortScenarios, formatTime, trendPoints, dateKey, freeUsedText, verdict, markQuotes, timeAgo };`,
+   return { computeStreak, canStartCall, sortScenarios, formatTime, trendPoints, dateKey, freeUsedText, verdict, markQuotes, timeAgo, turnRetryDelay };`,
 )() as Record<string, any>;
 
 const d = (s: string) => new Date(s); // local-time dates, e.g. "2026-10-11T12:00:00"
@@ -116,6 +116,17 @@ test("markQuotes highlights coaching quotes inside a line, case-insensitive", ()
     { text: " for you.", hit: false },
   ]);
   assert.deepEqual(L.markQuotes("Hello there", ["missing", "ok"]), [{ text: "Hello there", hit: false }]);
+});
+
+test("turnRetryDelay: one automatic retry, only while the server is still working, waiting 1-5 seconds", () => {
+  assert.equal(L.turnRetryDelay("turn_in_progress", "3", false), 3000);
+  assert.equal(L.turnRetryDelay("turn_in_progress", null, false), 3000, "no header: 3 s");
+  assert.equal(L.turnRetryDelay("turn_in_progress", "60", false), 5000, "never longer than 5 s");
+  assert.equal(L.turnRetryDelay("turn_in_progress", "0", false), 3000);
+  assert.equal(L.turnRetryDelay("turn_in_progress", "3", true), null, "never a second automatic retry");
+  for (const c of ["turn_conflict", "llm_busy", "llm_unavailable", "rate_limited", "network", "call_over"]) {
+    assert.equal(L.turnRetryDelay(c, "3", false), null, c);
+  }
 });
 
 test("formatTime pads minutes and seconds", () => {

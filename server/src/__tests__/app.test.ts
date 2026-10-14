@@ -114,17 +114,22 @@ test("public scenarios show the desk panel but not the caller-only facts", async
 
 test("flow: a call, its scorecard, then history and the review with transcript", async () => {
   const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-  llm.push(JSON.stringify({ line: "Hi, my internet is down.", end: false }), goodFeedback);
-  const greeting = exchanges(0);
-  const t = await call("POST", "/session/turn", { token: "ana-token", body: { sessionId: id, scenarioId: "tech-wifi-down", history: greeting } });
-  assert.equal(t.status, 200, JSON.stringify(t.data));
-  assert.equal((await call("GET", "/me", { token: "ana-token" })).data.callsToday, 1);
+  const history = exchanges(0);
+  for (let i = 1; i <= 3; i++) {
+    llm.push(JSON.stringify({ line: `Caller line ${i}: my internet is down.`, end: false }));
+    const t = await call("POST", "/session/turn", { token: "ana-token", body: { sessionId: id, scenarioId: "tech-wifi-down", history } });
+    assert.equal(t.status, 200, JSON.stringify(t.data));
+    if (i === 1) assert.equal((await call("GET", "/me", { token: "ana-token" })).data.callsToday, 1);
+    history.push({ role: "customer", text: t.data.line }, { role: "agent", text: `Agent answer number ${i} thank you.` });
+  }
 
-  const history = [...greeting, { role: "customer", text: "Hi, my internet is down." }, ...exchanges(2).slice(2)];
+  // The page's copy ends with a line the caller never answered; only the server's turns are scored and saved.
+  llm.push(goodFeedback);
   const f = await call("POST", "/session/feedback", { token: "ana-token", body: { sessionId: id, scenarioId: "tech-wifi-down", history } });
   assert.equal(f.status, 200, JSON.stringify(f.data));
   assert.equal(f.data.callId, id);
   assert.equal(f.data.qaScore, 60);
+  assert.equal(f.data.transcript.length, history.length - 1);
 
   const list = (await call("GET", "/calls", { token: "ana-token" })).data.calls;
   assert.equal(list.length, 1);
@@ -136,9 +141,13 @@ test("flow: a call, its scorecard, then history and the review with transcript",
   const detail = (await call("GET", `/calls/${id}`, { token: "ana-token" })).data;
   assert.equal(detail.feedback.qaScore, 60);
   assert.equal(detail.feedback.criteria[0].label, "Opening");
-  assert.equal(detail.transcript.length, history.length);
+  assert.deepEqual(detail.transcript, f.data.transcript);
   assert.equal((await call("GET", `/calls/${id}`, { token: "boss-token" })).status, 404, "not visible to others");
 
+  // Another user can't send turns or score this call.
+  const theirs = { sessionId: id, scenarioId: "tech-wifi-down", history };
+  assert.equal((await call("POST", "/session/turn", { token: "boss-token", body: theirs })).status, 404);
+  assert.equal((await call("POST", "/session/feedback", { token: "boss-token", body: theirs })).status, 404);
 });
 
 test("admin: only listed emails; users, Pro, usage", async () => {
@@ -221,4 +230,29 @@ test("auth: claims must be an authenticated user with an email", () => {
   assert.deepEqual(userFromClaims({ sub: "u1", email: " Ana@Example.com ", role: "authenticated" }), { userId: "u1", email: "ana@example.com" });
   assert.throws(() => userFromClaims({ sub: "u1", email: "a@b.c", role: "anon" }), ApiError);
   assert.throws(() => userFromClaims({ sub: "u1", role: "authenticated" }), ApiError);
+});
+
+test("http: a busy call answers 409 turn_in_progress with Retry-After; an invented turn gets 409 turn_conflict", async () => {
+  const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const ana = USERS["ana-token"]!.userId;
+  const history = exchanges(0);
+  llm.push(JSON.stringify({ line: "Hello?", end: false }));
+  const first = await call("POST", "/session/turn", { token: "ana-token", body: { sessionId: id, scenarioId: "tech-wifi-down", history } });
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  history.push({ role: "customer", text: "Hello?" }, { role: "agent", text: "How can I help?" });
+
+  const holder = "00000000-0000-4000-8000-0000000000aa";
+  assert.ok(await store.acquireLease(id, ana, holder, 90));
+  const busy = await call("POST", "/session/turn", { token: "ana-token", origin: PAGES, body: { sessionId: id, scenarioId: "tech-wifi-down", history } });
+  assert.equal(busy.status, 409);
+  assert.equal(busy.data.error.code, "turn_in_progress");
+  assert.equal(busy.headers.get("retry-after"), "3");
+  assert.match(busy.headers.get("access-control-expose-headers") ?? "", /Retry-After/, "the page can read it");
+  await store.releaseLease(id, ana, holder, 0);
+
+  const invented = [...history, { role: "customer", text: "Invented." }, { role: "agent", text: "Sure." }];
+  const forged = await call("POST", "/session/turn", { token: "ana-token", body: { sessionId: id, scenarioId: "tech-wifi-down", history: invented } });
+  assert.equal(forged.status, 409);
+  assert.equal(forged.data.error.code, "turn_conflict");
+  assert.equal(forged.headers.get("retry-after"), null);
 });

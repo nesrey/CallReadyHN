@@ -3,7 +3,9 @@ import pg from "pg";
 import { createApp } from "./app.js";
 import { createSupabaseAuth } from "./auth.js";
 import { loadAccountConfig, loadConfig } from "./config.js";
+import { assertSafeDatabase } from "./dbGuard.js";
 import { PgStore } from "./db/pgStore.js";
+import { TranscriptJanitor } from "./janitor.js";
 import { createAnthropicClient } from "./llm/client.js";
 import { createGeminiClient } from "./llm/gemini.js";
 import { ScenarioCatalog } from "./scenarios/catalog.js";
@@ -35,6 +37,14 @@ function createPool(databaseUrl: string, ca: string): pg.Pool {
 async function main() {
   const config = loadConfig(process.env);
   const accounts = loadAccountConfig(process.env);
+  // Before anything connects: startup changes the schema, so it must never run locally against production.
+  assertSafeDatabase(accounts.databaseUrl, process.env);
+  if (config.transcriptMode === "client") {
+    console.warn(
+      "TRANSCRIPT_MODE=client is ON. EMERGENCY FALLBACK: new calls trust the transcript the browser sends, so scores " +
+        "can be forged. Set TRANSCRIPT_MODE=server (or remove it) as soon as the problem is fixed.",
+    );
+  }
 
   const pool = createPool(accounts.databaseUrl, accounts.databaseSslCa);
   pool.on("error", (e) => console.error("Database pool error:", e.message));
@@ -43,12 +53,15 @@ async function main() {
   const added = await store.seedScenarios(loadScenariosFromDisk());
   const catalog = new ScenarioCatalog(store);
   await catalog.refresh();
+  const janitor = new TranscriptJanitor(store);
+  void janitor.tick(); // startup cleanup; it logs its own errors
 
   const app = createApp(
     {
       config,
       catalog,
       store,
+      janitor,
       llm: (config.provider === "gemini" ? createGeminiClient : createAnthropicClient)({
         apiKey: config.apiKey,
         model: config.model,
@@ -63,6 +76,7 @@ async function main() {
     console.log(`CallReady running at http://${config.host}:${config.port}`);
     console.log(`AI: ${config.provider} / ${config.model} | scenarios: ${catalog.list().length} (${added} new from the seed file)`);
     console.log(`Admins: ${config.adminEmails.join(", ") || "(none)"} | time zone: ${config.timeZone}`);
+    console.log(`Transcripts: ${config.transcriptMode === "server" ? "recorded by the server" : "BROWSER-SUPPLIED (emergency mode)"}`);
   });
 }
 

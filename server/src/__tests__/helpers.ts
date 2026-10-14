@@ -42,6 +42,35 @@ export function feedbackFor(keys: readonly string[], score = 6) {
 export const CUSTOMER_KEYS = ["opening", "verification", "listening", "empathy", "control", "resolution", "language", "closing"];
 export const goodFeedback = JSON.stringify(feedbackFor(CUSTOMER_KEYS));
 
+/** A model that waits until the test opens the gate, so tests can hold a request "inside" the AI call. */
+export class GateLlm implements LlmClient {
+  calls: LlmRequest[] = [];
+  private waiting: Array<() => void> = [];
+  constructor(private responses: string[]) {}
+  async complete(req: LlmRequest): Promise<LlmResponse> {
+    this.calls.push(req);
+    await new Promise<void>((r) => this.waiting.push(r));
+    const next = this.responses.shift();
+    if (next === undefined) throw new Error("GateLlm: no more responses");
+    return { text: next, inputTokens: 100, outputTokens: 50 };
+  }
+  get pending(): number {
+    return this.waiting.length;
+  }
+  open(): void {
+    for (const r of this.waiting.splice(0)) r();
+  }
+}
+
+/** Wait (yielding to the event loop) until `cond` holds. */
+export async function until(cond: () => boolean, what = "condition"): Promise<void> {
+  for (let i = 0; i < 2000; i++) {
+    if (cond()) return;
+    await new Promise((r) => setTimeout(r, 1));
+  }
+  throw new Error(`Timed out waiting for ${what}`);
+}
+
 /** A fresh in-memory Postgres (PGlite) with the schema and the seed scenarios. */
 export async function freshStore(): Promise<PgStore> {
   const store = new PgStore(new PGlite());

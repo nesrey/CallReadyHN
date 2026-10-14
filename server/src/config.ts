@@ -26,7 +26,17 @@ export interface Config {
   adminEmails: string[];
   /** IANA time zone that decides where "today" starts for the free daily limit and usage charts. */
   timeZone: string;
+  /**
+   * "server": the server records every turn and scores its own transcript (normal).
+   * "client": EMERGENCY FALLBACK ONLY. New calls trust the transcript the page sends, which can be forged.
+   */
+  transcriptMode: TranscriptMode;
+  /** How long one request may hold a call while it runs a turn or the scoring. Longer than two model attempts. */
+  leaseSeconds: number;
 }
+
+export const TRANSCRIPT_MODES = ["server", "client"] as const;
+export type TranscriptMode = (typeof TRANSCRIPT_MODES)[number];
 
 /** Accounts and database. Separate from Config so the AI/server settings can be tested on their own. */
 export interface AccountConfig {
@@ -108,6 +118,11 @@ export function loadConfig(env: Env): Config {
   const maxTurns = int(env, "MAX_TURNS", 10);
   if (minTurns > maxTurns) throw new Error("MIN_TURNS cannot be greater than MAX_TURNS");
 
+  const transcriptMode = ((env.TRANSCRIPT_MODE ?? "").trim().toLowerCase() || "server") as TranscriptMode;
+  if (!(TRANSCRIPT_MODES as readonly string[]).includes(transcriptMode)) {
+    throw new Error(`TRANSCRIPT_MODE must be one of ${TRANSCRIPT_MODES.join(", ")} (got "${env.TRANSCRIPT_MODE}")`);
+  }
+
   const cap = int(env, "SESSION_TOKEN_CAP", 20000, 1000);
   const reserve = int(env, "FEEDBACK_TOKEN_RESERVE", 4000, 0);
   if (reserve >= cap) throw new Error("FEEDBACK_TOKEN_RESERVE must be lower than SESSION_TOKEN_CAP");
@@ -138,6 +153,8 @@ export function loadConfig(env: Env): Config {
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
     timeZone: timeZone(env),
+    transcriptMode,
+    leaseSeconds: 90,
   };
 }
 

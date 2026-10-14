@@ -29,6 +29,15 @@ export function assertTurnShape(history: Message[]): void {
   }
 }
 
+/**
+ * What a turn request asks for, from a normalized history that ends with the agent: `seq` is how many caller lines
+ * the page has seen (the agent is answering caller line number `seq`), `agentText` is the agent's new line. Nothing
+ * else in the page's history is trusted.
+ */
+export function sequenceOf(history: Message[]): { seq: number; agentText: string } {
+  return { seq: countRole(history, "customer"), agentText: history[history.length - 1]!.text };
+}
+
 /** Customer turn number this reply will be (1-based, counting the reply itself). */
 export function customerTurnNumber(history: Message[]): number {
   return countRole(history, "customer") + 1;

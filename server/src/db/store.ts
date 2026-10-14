@@ -38,6 +38,23 @@ export interface CallRow {
   turns: number;
   tokens: number;
   finishedAt: Date | null;
+  /** true: the server records the turns and scores its own copy. false: calls from before that (legacy). */
+  serverTranscript: boolean;
+  /** When the server ended the call (the caller said goodbye or the turn limit was reached). */
+  callerEndedAt: Date | null;
+}
+
+/** One finished turn: the agent's line and the caller's reply, written together by the lease holder. */
+export interface TurnCommit {
+  callId: string;
+  userId: string;
+  leaseToken: string;
+  /** Position of the agent line; the caller's reply goes right after it. */
+  position: number;
+  agentText: string;
+  callerText: string;
+  tokens: number;
+  ended: boolean;
 }
 
 export interface CallSummary {
@@ -134,13 +151,34 @@ export interface Store {
   setScenarioEnabled(id: string, enabled: boolean): Promise<boolean>;
 
   getCall(id: string): Promise<CallRow | null>;
-  createCall(c: { id: string; userId: string; scenarioId: string }): Promise<void>;
+  /** Returns false when a call with this id already exists (nothing is changed then). */
+  createCall(c: { id: string; userId: string; scenarioId: string; serverTranscript?: boolean }): Promise<boolean>;
   /** Add the tokens a model request used; count a turn when the AI produced a line. */
   recordUsage(callId: string, tokens: number, turn: boolean): Promise<void>;
   /** Calls with at least one AI turn, started at or after `since`. */
   countCallsSince(userId: string, since: Date): Promise<number>;
-  /** Store the scorecard and transcript and close the call. Returns false if the call was already closed. */
-  saveFeedback(callId: string, durationSec: number, qaScore: number, f: FeedbackOutput, transcript: Message[]): Promise<boolean>;
+
+  /**
+   * Take the call for one request (a turn or the scoring) under a fresh `token`, if it is unfinished and nobody holds
+   * an unexpired lease. Returns the call as it is now, or null.
+   */
+  acquireLease(callId: string, userId: string, token: string, seconds: number): Promise<CallRow | null>;
+  /** Add `tokens` and let go of the lease, but only if `token` still holds it (a newer holder is never released). */
+  releaseLease(callId: string, userId: string, token: string, tokens: number): Promise<void>;
+  /** Store a turn, its tokens, and the end of the call in one step; false (nothing stored) if the lease was lost. */
+  commitTurn(t: TurnCommit): Promise<boolean>;
+  /** The server's transcript of a call, in order. Empty for someone else's call. */
+  getTurns(callId: string, userId: string): Promise<Message[]>;
+  /** Delete the transcript lines of calls started before `before` that were never scored. Returns how many calls. */
+  purgeAbandonedTurns(before: Date): Promise<number>;
+
+  /**
+   * Store the scorecard and close the call. `transcript` is written with it for legacy calls; null when the server
+   * already has the turns. With `leaseToken`, only the current lease holder can save. False if nothing was saved.
+   */
+  saveFeedback(
+    callId: string, durationSec: number, qaScore: number, f: FeedbackOutput, transcript: Message[] | null, leaseToken?: string | null,
+  ): Promise<boolean>;
   getCallDetail(userId: string, callId: string): Promise<CallDetail | null>;
   listCalls(userId: string, limit: number): Promise<CallSummary[]>;
   skillAverages(userId: string): Promise<SkillAverage[]>;

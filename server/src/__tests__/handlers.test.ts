@@ -31,7 +31,10 @@ async function setup(responses: Array<string | Error> = [], now?: () => Date) {
   return { deps, store, llm };
 }
 
-/** A call already in progress (the AI has answered at least once). */
+/**
+ * A call already in progress (the AI has answered at least once), created the way calls were before the server
+ * recorded transcripts: these exercise the legacy path. Server-recorded calls are covered in transcripts.test.ts.
+ */
 async function ongoing(store: PgStore, id = CALL, user = ANA, scenarioId = FREE, tokens = 0) {
   await store.createCall({ id, userId: user.userId, scenarioId });
   await store.recordUsage(id, tokens, true);

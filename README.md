@@ -64,6 +64,11 @@ publishable key, which are public by design). The server refuses to start if a r
 | `RATE_TURN_MAX` / `RATE_TURN_WINDOW_SEC` | `40` / `600` | Turn requests per account per window |
 | `RATE_FEEDBACK_MAX` / `RATE_FEEDBACK_WINDOW_SEC` | `6` / `600` | Feedback requests per account per window |
 | `MIN_TURNS` / `MAX_TURNS` | `6` / `10` | Call length in customer turns |
+| `TRANSCRIPT_MODE` | `server` | **Leave unset.** `client` is an emergency fallback only (see section 5) |
+
+**Never point a local run at the production database.** Startup changes the schema. The server refuses to start
+when `DATABASE_URL` is the live Supabase project, unless it runs on Render (`server/src/dbGuard.ts`). Use a separate
+Supabase project for local work; the tests use an in-memory database and never connect anywhere.
 
 On Gemini's free tier Google may use the prompts (the practice-call transcripts) to improve its products, and the
 daily limits are low. Fine for a small pilot; tell testers not to share real personal details on calls.
@@ -150,6 +155,30 @@ dashboard.
 5. The scorecard and the transcript are saved; the results page replays the call with the coaching moments
    highlighted.
 
+**The server records the conversation; the page can't change it.** Each turn the page still sends the whole history,
+but the server uses only the agent's newest line and the number of caller lines (which turn it answers). Every
+earlier line comes from the server's own `call_turns`, and scoring grades only that copy, so a page can't invent what
+the caller said, rewrite an earlier answer, or add a line after the caller hung up.
+
+- One request at a time works on a call: it takes a lease (`calls.lease_token`, a fresh random token, valid 90 s).
+  The turn's two lines, its tokens and the end of the call are stored in one statement, and only while that token
+  still holds an unexpired lease, so an expired request can never write, overwrite or release a newer one's lease.
+- A repeated request for a turn that was already answered (same line) gets the stored reply without asking the AI
+  again; a different line for an answered turn gets `409 turn_conflict`. A request while another one is running gets
+  `409 turn_in_progress` with `Retry-After`; the page waits and retries once on its own, then shows a button.
+- A line the AI never answered (e.g. the AI failed, then the agent hung up) is not part of the transcript and is not
+  scored.
+- An unscored call can't be continued or scored 24 hours after it started. Its partial transcript is then deleted
+  by a cleanup that runs at startup and at most hourly while requests come in (the free server has no scheduler and
+  sleeps, so deletion can lag on quiet days). The call row (time, scenario, tokens) stays for the daily limit and
+  usage.
+- Calls from before this change (`calls.server_transcript = false`) keep the old behaviour, logged as
+  `legacy_transcript`. Every call created now is `true`; nothing in a request can change that.
+- **`TRANSCRIPT_MODE=client` is an emergency fallback only.** New calls then trust the page's transcript again, so
+  scores can be forged. The server logs a warning at startup and for every call it creates in that mode. Use it only
+  to get calls working while a bug in the server transcript is fixed, then remove it. The setting and the legacy code
+  path are to be deleted two weeks after this ships (target: 2026-10-26).
+
 ## 6. Free vs Pro
 
 - **Free:** a daily number of calls (default 2, set in the admin page) on scenarios marked *Free* (by default the
@@ -182,7 +211,7 @@ dashboard.
 ## 9. Tests
 
 ```bash
-npm test          # 97 tests
+npm test          # 131 tests
 npm run typecheck
 ```
 
@@ -204,11 +233,13 @@ Signed in:
 - `GET /me`: email, `role`, `interests`, `isPro`, `proUntil`, `isAdmin`, `callsToday`, `freeDailyLimit`,
   `proInstructions`, `timeZone`. `PUT /me` with `{ role: "job_seeker"|"agent"|"trainer", interests: [call types] }`.
 - `POST /session/turn` with `{ sessionId: <uuid>, scenarioId, history }` returns `{ line, callEnded, turnNumber, usage }`.
-  `history` must start with the agent's line and end with one. The first turn creates the call with that id after
-  checking the plan (`403 pro_required`, `403 daily_limit`).
+  `history` must start with the agent's line and end with one; the server uses only that last line and the number of
+  caller lines in it (section 5). The first turn creates the call with that id after checking the plan
+  (`403 pro_required`, `403 daily_limit`). `409 turn_in_progress` (with `Retry-After`), `409 turn_conflict`.
 - `POST /session/feedback` with the same body returns `callId`, `qaScore`, `criteria` (key, label, weight, score,
-  evidence, tip), `strengths`, `moments`, `phrases` and `summary`, and saves them with the transcript. Asking again
-  returns the saved copy. `422 not_enough_speech` with fewer than 3 real agent lines.
+  evidence, tip), `strengths`, `moments`, `phrases`, `summary` and the `transcript` that was scored, and saves them.
+  The server scores its own transcript; `history` is ignored. Asking again returns the saved copy.
+  `422 not_enough_speech` with fewer than 3 real agent lines; `409 turn_in_progress` while a turn is still running.
 - `GET /calls` (history and per-criterion `skills` averages), `GET /calls/:id` (one call with its scorecard and
   transcript).
 
@@ -218,7 +249,8 @@ Admin (`403 forbidden` for others): `GET /admin/users?q=&offset=`, `POST /admin/
 `GET|PUT /admin/settings` `{ freeDailyLimit, proInstructions }`.
 
 Model output must be valid JSON; if it is not, the server retries once with the error fed back, then returns
-`502 llm_bad_output`. Other codes: `unauthorized`, `invalid_request`, `unknown_scenario`, `not_found`, `call_over`,
+`502 llm_bad_output`. Other codes: `unauthorized`, `invalid_request`, `unknown_scenario`, `not_found`, `call_over`
+(also for a call the caller ended, or an unscored call older than 24 hours), `turn_in_progress`, `turn_conflict`,
 `rate_limited`, `session_token_cap`, `llm_unavailable`, `llm_busy`.
 
 ## 11. Scenarios
@@ -234,6 +266,7 @@ calm non-interview calls) and `behaviorNotes`.
 ## Known pilot limitations
 
 - Rate limits are in memory and reset when the server restarts (per-call token totals are in the database).
+- `TRANSCRIPT_MODE` and the legacy (browser-transcript) code path are temporary; remove them by 2026-10-26.
 - Payments are manual; the landing page says "Contact us" for Pro and "2 calls a day" for Free (update it by hand if
   the free limit changes).
 - The caller voice is the browser's built-in speech; quality depends on the device.

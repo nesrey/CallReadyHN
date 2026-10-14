@@ -127,6 +127,15 @@ begin
 end $$;
 insert into ${DB}.settings (id) values (true) on conflict (id) do nothing;
 
+-- Server-recorded transcripts. Calls that existed before this change keep server_transcript = false (the old
+-- browser-supplied transcript); every call created now is written with true. caller_ended_at is set when the server
+-- ends the call. lease_token/lease_until let one request at a time run a turn or the scoring for a call.
+alter table ${DB}.calls add column if not exists server_transcript boolean not null default false;
+alter table ${DB}.calls add column if not exists caller_ended_at timestamptz;
+alter table ${DB}.calls add column if not exists lease_token uuid;
+alter table ${DB}.calls add column if not exists lease_until timestamptz;
+create index if not exists calls_unfinished on ${DB}.calls (started_at) where finished_at is null;
+
 alter table ${DB}.profiles enable row level security;
 alter table ${DB}.scenarios enable row level security;
 alter table ${DB}.calls enable row level security;
