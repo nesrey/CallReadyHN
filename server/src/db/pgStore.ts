@@ -197,11 +197,11 @@ export class PgStore implements Store {
     return rows[0] ? toCall(rows[0]) : null;
   }
 
-  async createCall(c: { id: string; userId: string; scenarioId: string; serverTranscript?: boolean }): Promise<boolean> {
+  async createCall(c: { id: string; userId: string; scenarioId: string }): Promise<boolean> {
     const { rows } = await this.db.query(
-      `insert into ${DB}.calls (id, user_id, scenario_id, server_transcript) values ($1, $2, $3, $4)
+      `insert into ${DB}.calls (id, user_id, scenario_id, server_transcript) values ($1, $2, $3, true)
        on conflict (id) do nothing returning id`,
-      [c.id, c.userId, c.scenarioId, c.serverTranscript === true],
+      [c.id, c.userId, c.scenarioId],
     );
     return rows.length > 0;
   }
@@ -287,17 +287,16 @@ export class PgStore implements Store {
   }
 
   async saveFeedback(
-    callId: string, durationSec: number, qaScore: number, f: FeedbackOutput, transcript: Message[] | null, leaseToken: string | null = null,
+    callId: string, durationSec: number, qaScore: number, f: FeedbackOutput, leaseToken: string | null = null,
   ): Promise<boolean> {
     const idx = (a: unknown[]) => a.map((_, i) => i);
-    const lines = transcript ?? [];
     // One statement, so the call row and all its child rows are written together or not at all.
     const { rows } = await this.db.query<{ n: unknown }>(
       `with c as (
          update ${DB}.calls set finished_at = now(), duration_sec = $2, qa_score = $3, summary = $4,
            lease_token = null, lease_until = null
          where id = $1 and finished_at is null
-           and ($22::uuid is null or (lease_token = $22::uuid and lease_until > now()))
+           and ($19::uuid is null or (lease_token = $19::uuid and lease_until > now()))
          returning id
        ), crit as (
          insert into ${DB}.call_criteria (call_id, position, key, score, evidence, tip)
@@ -312,9 +311,6 @@ export class PgStore implements Store {
        ), phr as (
          insert into ${DB}.call_phrases (call_id, position, phrase, when_to_use)
          select c.id, t.p, t.x, t.w from c, unnest($16::smallint[], $17::text[], $18::text[]) as t(p, x, w)
-       ), trn as (
-         insert into ${DB}.call_turns (call_id, position, role, text)
-         select c.id, t.p, t.r, t.x from c, unnest($19::smallint[], $20::text[], $21::text[]) as t(p, r, x)
        )
        select count(*) as n from c`,
       [
@@ -324,7 +320,6 @@ export class PgStore implements Store {
         idx(f.strengths), f.strengths,
         idx(f.moments), f.moments.map((m) => m.said), f.moments.map((m) => m.better), f.moments.map((m) => m.why),
         idx(f.phrases), f.phrases.map((p) => p.phrase), f.phrases.map((p) => p.whenToUse),
-        idx(lines), lines.map((m) => m.role), lines.map((m) => m.text),
         leaseToken,
       ],
     );

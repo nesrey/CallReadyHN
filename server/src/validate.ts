@@ -17,9 +17,14 @@ export interface SessionBody {
 
 const bad = (msg: string) => new ApiError(400, "invalid_request", msg);
 
+/**
+ * `historyRequired: false` (scoring) lets the page leave out its history: the server scores its own record. Pages
+ * from before that still send one, so it is still accepted and checked when present.
+ */
 export function parseSessionBody(
   body: unknown,
   limits: { maxHistory: number; maxChars: number },
+  opts: { historyRequired?: boolean } = {},
 ): SessionBody {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw bad("Body must be a JSON object.");
@@ -29,6 +34,7 @@ export function parseSessionBody(
   if (typeof b.scenarioId !== "string" || !SCENARIO_ID.test(b.scenarioId)) {
     throw bad("scenarioId is invalid.");
   }
+  if (b.history === undefined && opts.historyRequired === false) return { sessionId: b.sessionId, scenarioId: b.scenarioId, history: [] };
   if (!Array.isArray(b.history)) throw bad("history must be an array.");
   if (b.history.length > limits.maxHistory) {
     throw bad(`history can have at most ${limits.maxHistory} messages.`);

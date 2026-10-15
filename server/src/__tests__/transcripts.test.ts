@@ -11,7 +11,7 @@ import { handleFeedback, handleTurn, type Deps } from "../handlers.js";
 import { CALL_TTL_MS, TranscriptJanitor } from "../janitor.js";
 import { ScenarioCatalog } from "../scenarios/catalog.js";
 import type { LlmClient, Message } from "../types.js";
-import { GateLlm, MockLlm, freshStore, goodFeedback, until } from "./helpers.js";
+import { GateLlm, MockLlm, freshStore, goodFeedback, recordTurns, until } from "./helpers.js";
 
 const config = loadConfig({ ANTHROPIC_API_KEY: "test" });
 const ANA: AuthUser = { userId: "11111111-1111-4111-8111-111111111111", email: "ana@example.com" };
@@ -299,39 +299,67 @@ test("end of call: the turn limit comes from the server's count, not the page's"
   await assert.rejects(handleTurn(deps, ANA, body(shortened)), code("turn_conflict", 409));
 });
 
-test("legacy boundary: a request can't make a new call use the page's transcript", async () => {
+/** Rows from before the server recorded transcripts can only exist in the database now; make one for a test. */
+const markOld = (store: PgStore, id: string) =>
+  (store as unknown as { db: { query(sql: string, params: unknown[]): Promise<unknown> } }).db
+    .query("update callready_v2.calls set server_transcript = false where id = $1", [id]);
+
+test("new calls are always server-recorded, whatever the request asks for", async () => {
   const llm = new MockLlm([turnJson("Hi.")]);
   const { deps, store } = await setup(llm);
   await handleTurn(deps, ANA, body([{ role: "agent", text: GREETING }], { serverTranscript: false, transcriptMode: "client" }));
   assert.equal((await store.getCall(CALL))!.serverTranscript, true);
 });
 
-test("legacy boundary: only calls from before the change use the page's history, and only for 24 hours", async () => {
-  const llm = new MockLlm([turnJson("Caller line 2.")]);
+test("old calls: an unscored call from before server transcripts can't be continued or scored, even within 24 hours", async () => {
+  const llm = new MockLlm([]);
   const { deps, store } = await setup(llm);
-  await store.createCall({ id: CALL, userId: ANA.userId, scenarioId: FREE }); // an existing row: defaults to legacy
-  await store.recordUsage(CALL, 0, true);
-  assert.equal((await store.getCall(CALL))!.serverTranscript, false);
+  await store.createCall({ id: CALL, userId: ANA.userId, scenarioId: FREE });
+  await recordTurns(store, CALL, ANA.userId, [{ role: "agent", text: GREETING }, { role: "customer", text: "Old caller line." }]);
+  await markOld(store, CALL);
   const page: Message[] = [{ role: "agent", text: GREETING }, { role: "customer", text: "Old caller line." }, { role: "agent", text: agentLine(1) }];
-  await handleTurn(deps, ANA, body(page));
-  assert.match(sent(llm), /Old caller line/, "legacy calls keep the old behaviour");
-
-  const later = { ...deps, now: () => new Date(Date.now() + CALL_TTL_MS + 60_000) };
-  await assert.rejects(handleTurn(later, ANA, body(page)), code("call_over", 400));
-  await assert.rejects(handleFeedback(later, ANA, body(page)), code("call_over", 400));
+  await assert.rejects(handleTurn(deps, ANA, body(page)), code("call_over", 400));
+  await assert.rejects(handleFeedback(deps, ANA, body(page)), code("call_over", 400));
+  assert.equal(llm.calls.length, 0, "the AI is never asked");
+  assert.equal((await turnsOf(store)).length, 2, "nothing is added");
+  assert.equal((await store.getCall(CALL))!.finishedAt, null);
 });
 
-test("emergency mode: TRANSCRIPT_MODE=client marks only new calls; switching back leaves them as they were", async () => {
-  const llm = new MockLlm([turnJson("Hi."), turnJson("Hi again.")]);
-  const { deps, store } = await setup(llm, { config: { transcriptMode: "client" } });
-  await handleTurn(deps, ANA, body([{ role: "agent", text: GREETING }]));
-  assert.equal((await store.getCall(CALL))!.serverTranscript, false);
-  const back = { ...deps, config: { ...deps.config, transcriptMode: "server" as const } };
-  const other = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-  await handleTurn(back, ANA, body([{ role: "agent", text: GREETING }], { sessionId: other }));
-  assert.equal((await store.getCall(other))!.serverTranscript, true);
-  assert.equal((await store.getCall(CALL))!.serverTranscript, false);
-  assert.equal(loadConfig({ ANTHROPIC_API_KEY: "k" }).transcriptMode, "server", "server is the default");
+test("old calls: a scored one stays readable, and asking for its scorecard again returns the saved copy", async () => {
+  const llm = new MockLlm([]);
+  const { deps, store } = await setup(llm);
+  const h = await talk(deps, llm, 3);
+  llm.push(goodFeedback);
+  const first = await handleFeedback(deps, ANA, body(h));
+  await markOld(store, CALL);
+  const again = await handleFeedback(deps, ANA, { sessionId: CALL, scenarioId: FREE });
+  assert.equal(again.qaScore, first.qaScore);
+  assert.deepEqual(again.transcript, first.transcript);
+  assert.equal((await store.getCallDetail(ANA.userId, CALL))!.transcript.length, 6);
+  assert.equal(llm.calls.length, 4, "3 turns and 1 grading; nothing more");
+});
+
+test("TRANSCRIPT_MODE=client left in the environment changes nothing", async () => {
+  const llm = new MockLlm([]);
+  const { deps, store } = await setup(llm, { config: loadConfig({ ANTHROPIC_API_KEY: "test", TRANSCRIPT_MODE: "client" }) });
+  const h = await talk(deps, llm, 3);
+  assert.equal((await store.getCall(CALL))!.serverTranscript, true);
+  const forged = h.map((m) => (m.role === "customer" ? { ...m, text: "FORGED" } : m));
+  llm.push(goodFeedback);
+  const fb = await handleFeedback(deps, ANA, body(forged));
+  assert.doesNotMatch(sent(llm), /FORGED/);
+  assert.deepEqual(fb.transcript, await turnsOf(store));
+});
+
+test("scoring: the page can leave its history out; the server's record is scored", async () => {
+  const llm = new MockLlm([]);
+  const { deps, store } = await setup(llm);
+  await talk(deps, llm, 3);
+  llm.push(goodFeedback);
+  const fb = await handleFeedback(deps, ANA, { sessionId: CALL, scenarioId: FREE });
+  assert.equal(fb.qaScore, 60);
+  assert.deepEqual(fb.transcript, await turnsOf(store));
+  await assert.rejects(handleTurn(deps, ANA, { sessionId: CALL, scenarioId: FREE }), code("invalid_request", 400), "a turn still needs the agent's line");
 });
 
 test("expiry: an unscored call can't continue or be scored after 24 hours; the cleanup deletes only its lines", async () => {

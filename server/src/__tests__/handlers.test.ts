@@ -9,7 +9,7 @@ import { parseFeedbackOutput } from "../llm/parse.js";
 import { CUSTOMER_RUBRIC } from "../llm/rubric.js";
 import { ScenarioCatalog } from "../scenarios/catalog.js";
 import type { Message } from "../types.js";
-import { CUSTOMER_KEYS, MockLlm, exchanges, feedbackFor, freshStore, goodFeedback } from "./helpers.js";
+import { CUSTOMER_KEYS, MockLlm, exchanges, feedbackFor, freshStore, goodFeedback, recordTurns } from "./helpers.js";
 
 const config = loadConfig({ ANTHROPIC_API_KEY: "test", SESSION_TOKEN_CAP: "10000", FEEDBACK_TOKEN_RESERVE: "4000" });
 const ANA: AuthUser = { userId: "11111111-1111-4111-8111-111111111111", email: "ana@example.com" };
@@ -32,12 +32,13 @@ async function setup(responses: Array<string | Error> = [], now?: () => Date) {
 }
 
 /**
- * A call already in progress (the AI has answered at least once), created the way calls were before the server
- * recorded transcripts: these exercise the legacy path. Server-recorded calls are covered in transcripts.test.ts.
+ * A call in progress whose first `turns` exchanges are already stored by the server (as exchanges(turns) has them),
+ * plus `tokens` already used. The forgery and concurrency cases are in transcripts.test.ts.
  */
-async function ongoing(store: PgStore, id = CALL, user = ANA, scenarioId = FREE, tokens = 0) {
+async function ongoing(store: PgStore, id = CALL, user = ANA, scenarioId = FREE, tokens = 0, turns = 1) {
   await store.createCall({ id, userId: user.userId, scenarioId });
-  await store.recordUsage(id, tokens, true);
+  await recordTurns(store, id, user.userId, exchanges(turns));
+  if (tokens) await store.recordUsage(id, tokens, false);
 }
 
 const body = (history: Message[], extra: Record<string, unknown> = {}) => ({
@@ -76,21 +77,21 @@ test("turn: a call cannot start without the agent's greeting", async () => {
 
 test("turn: end rules (never before min, model decides between, forced at max)", async () => {
   let s = await setup([turnJson("Okay, goodbye!", true)]);
-  await ongoing(s.store);
+  await ongoing(s.store, CALL, ANA, FREE, 0, 2);
   assert.equal((await handleTurn(s.deps, ANA, body(exchanges(2)))).callEnded, false);
 
   s = await setup([turnJson("Thanks, bye!", true)]);
-  await ongoing(s.store);
+  await ongoing(s.store, CALL, ANA, FREE, 0, 6);
   assert.equal((await handleTurn(s.deps, ANA, body(exchanges(6)))).callEnded, true);
 
   s = await setup([turnJson("One more thing...", false)]);
-  await ongoing(s.store);
+  await ongoing(s.store, CALL, ANA, FREE, 0, 9);
   const out = await handleTurn(s.deps, ANA, body(exchanges(9)));
   assert.equal(out.turnNumber, 10);
   assert.equal(out.callEnded, true);
 
   s = await setup([]);
-  await ongoing(s.store);
+  await ongoing(s.store, CALL, ANA, FREE, 0, 10);
   await assert.rejects(handleTurn(s.deps, ANA, body(exchanges(10))), code("call_over", 400));
 });
 
@@ -100,7 +101,7 @@ test("turn: calls belong to one user and one scenario", async () => {
   await ongoing(store);
   await assert.rejects(handleTurn(deps, BETO, body(exchanges(1))), code("not_found", 404), "someone else's call");
   await assert.rejects(handleTurn(deps, ANA, body(exchanges(1), { scenarioId: FREE_2 })), code("invalid_request", 400));
-  await store.saveFeedback(CALL, 30, 60, parseFeedbackOutput(goodFeedback, CUSTOMER_RUBRIC), exchanges(1));
+  await store.saveFeedback(CALL, 30, 60, parseFeedbackOutput(goodFeedback, CUSTOMER_RUBRIC));
   await assert.rejects(handleTurn(deps, ANA, body(exchanges(1))), code("call_over", 400), "finished call");
 });
 
@@ -161,15 +162,15 @@ test("limits: Pro has no limits until it expires", async () => {
 
 test("turn: stops at the turn budget, but feedback stays possible", async () => {
   const { deps, store } = await setup([goodFeedback]);
-  await ongoing(store, CALL, ANA, FREE, 6_500); // cap 10000 - reserve 4000 = 6000
-  await assert.rejects(handleTurn(deps, ANA, body(exchanges(1))), code("session_token_cap", 429));
-  const fb = await handleFeedback(deps, ANA, body(exchanges(2)));
+  await ongoing(store, CALL, ANA, FREE, 6_500, 3); // cap 10000 - reserve 4000 = 6000
+  await assert.rejects(handleTurn(deps, ANA, body(exchanges(3))), code("session_token_cap", 429));
+  const fb = await handleFeedback(deps, ANA, body(exchanges(3)));
   assert.equal(fb.qaScore, 60);
 });
 
 test("feedback: QA scorecard with labels, saved with the transcript; asking again returns the saved copy", async () => {
   const { deps, store, llm } = await setup([goodFeedback]);
-  await ongoing(store);
+  await ongoing(store, CALL, ANA, FREE, 0, 3);
   const out = await handleFeedback(deps, ANA, body(exchanges(3)));
   assert.equal(out.callId, CALL);
   assert.equal(out.qaScore, 60);
@@ -181,7 +182,7 @@ test("feedback: QA scorecard with labels, saved with the transcript; asking agai
 
   const saved = (await store.getCallDetail(ANA.userId, CALL))!;
   assert.equal(saved.qaScore, 60);
-  assert.equal(saved.transcript.length, exchanges(3).length);
+  assert.equal(saved.transcript.length, 6, "the server's 3 stored turns; the page's unanswered last line is not part of it");
   assert.equal((await store.getCall(CALL))!.tokens, 150);
 
   const again = await handleFeedback(deps, ANA, body(exchanges(3)));
@@ -194,7 +195,7 @@ test("feedback: interview calls use the interview scorecard", async () => {
   const keys = ["introduction", "clarity", "experience", "situational", "professionalism", "closing"];
   const { deps, store } = await setup([JSON.stringify(feedbackFor(keys, 8))]);
   await store.setPro(ANA.userId, true, null);
-  await ongoing(store, CALL, ANA, "interview-bilingual-agent");
+  await ongoing(store, CALL, ANA, "interview-bilingual-agent", 0, 3);
   const out = await handleFeedback(deps, ANA, body(exchanges(3), { scenarioId: "interview-bilingual-agent" }));
   assert.deepEqual(out.criteria.map((c) => c.key), keys);
   assert.equal(out.qaScore, 80);
@@ -202,8 +203,10 @@ test("feedback: interview calls use the interview scorecard", async () => {
 
 test("feedback: refused for thin calls, other users, and spent budgets", async () => {
   const { deps, store, llm } = await setup([goodFeedback]);
-  await ongoing(store);
-  await assert.rejects(handleFeedback(deps, ANA, body(exchanges(1))), code("not_enough_speech", 422));
+  const thin = ids[0]!;
+  await ongoing(store, thin);
+  await assert.rejects(handleFeedback(deps, ANA, body(exchanges(3), { sessionId: thin })), code("not_enough_speech", 422), "the server's record decides, not the page's");
+  await ongoing(store, CALL, ANA, FREE, 0, 3);
   await assert.rejects(handleFeedback(deps, BETO, body(exchanges(3))), code("not_found", 404));
   await store.recordUsage(CALL, 10_000, false);
   await assert.rejects(handleFeedback(deps, ANA, body(exchanges(3))), code("session_token_cap", 429));
@@ -212,13 +215,13 @@ test("feedback: refused for thin calls, other users, and spent budgets", async (
 
 test("feedback: retries on invalid output, 502 after two failures", async () => {
   let s = await setup(['{"criteria":{}}', goodFeedback]);
-  await ongoing(s.store);
-  const out = await handleFeedback(s.deps, ANA, body(exchanges(2)));
+  await ongoing(s.store, CALL, ANA, FREE, 0, 3);
+  const out = await handleFeedback(s.deps, ANA, body(exchanges(3)));
   assert.equal(out.qaScore, 60);
   assert.equal(s.llm.calls.length, 2);
 
   s = await setup(["bad", "bad"]);
-  await ongoing(s.store);
-  await assert.rejects(handleFeedback(s.deps, ANA, body(exchanges(2))), code("llm_bad_output", 502));
+  await ongoing(s.store, CALL, ANA, FREE, 0, 3);
+  await assert.rejects(handleFeedback(s.deps, ANA, body(exchanges(3))), code("llm_bad_output", 502));
   assert.equal((await s.store.getCall(CALL))!.tokens, 300, "tokens are recorded even when it fails");
 });

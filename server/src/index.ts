@@ -39,12 +39,6 @@ async function main() {
   const accounts = loadAccountConfig(process.env);
   // Before anything connects: startup changes the schema, so it must never run locally against production.
   assertSafeDatabase(accounts.databaseUrl, process.env);
-  if (config.transcriptMode === "client") {
-    console.warn(
-      "TRANSCRIPT_MODE=client is ON. EMERGENCY FALLBACK: new calls trust the transcript the browser sends, so scores " +
-        "can be forged. Set TRANSCRIPT_MODE=server (or remove it) as soon as the problem is fixed.",
-    );
-  }
 
   const pool = createPool(accounts.databaseUrl, accounts.databaseSslCa);
   pool.on("error", (e) => console.error("Database pool error:", e.message));
@@ -76,7 +70,6 @@ async function main() {
     console.log(`CallReady running at http://${config.host}:${config.port}`);
     console.log(`AI: ${config.provider} / ${config.model} | scenarios: ${catalog.list().length} (${added} new from the seed file)`);
     console.log(`Admins: ${config.adminEmails.join(", ") || "(none)"} | time zone: ${config.timeZone}`);
-    console.log(`Transcripts: ${config.transcriptMode === "server" ? "recorded by the server" : "BROWSER-SUPPLIED (emergency mode)"}`);
   });
 }
 

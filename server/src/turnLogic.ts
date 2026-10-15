@@ -38,11 +38,6 @@ export function sequenceOf(history: Message[]): { seq: number; agentText: string
   return { seq: countRole(history, "customer"), agentText: history[history.length - 1]!.text };
 }
 
-/** Customer turn number this reply will be (1-based, counting the reply itself). */
-export function customerTurnNumber(history: Message[]): number {
-  return countRole(history, "customer") + 1;
-}
-
 /** The server, not the model, decides when the call is allowed to end. */
 export function resolveEnd(modelEnd: boolean, turn: number, minTurns: number, maxTurns: number): boolean {
   if (turn < minTurns) return false;

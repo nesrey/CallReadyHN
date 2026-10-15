@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { PgStore } from "../db/pgStore.js";
 import { loadScenariosFromDisk } from "../scenarios/load.js";
@@ -69,6 +70,21 @@ export async function until(cond: () => boolean, what = "condition"): Promise<vo
     await new Promise((r) => setTimeout(r, 1));
   }
   throw new Error(`Timed out waiting for ${what}`);
+}
+
+/**
+ * Store the answered turns of `history` (agent line + caller reply pairs, as exchanges() builds them) the way the
+ * server does: one lease and one commit per turn. A trailing agent line with no reply is not stored.
+ */
+export async function recordTurns(store: PgStore, callId: string, userId: string, history: Message[], tokens = 0): Promise<void> {
+  for (let i = 0; i + 1 < history.length; i += 2) {
+    const leaseToken = randomUUID();
+    if (!(await store.acquireLease(callId, userId, leaseToken, 90))) throw new Error("recordTurns: call not available");
+    const ok = await store.commitTurn({
+      callId, userId, leaseToken, position: i, agentText: history[i]!.text, callerText: history[i + 1]!.text, tokens, ended: false,
+    });
+    if (!ok) throw new Error("recordTurns: commit refused");
+  }
 }
 
 /** A fresh in-memory Postgres (PGlite) with the schema and the seed scenarios. */

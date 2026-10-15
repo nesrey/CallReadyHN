@@ -6,7 +6,7 @@ import { proActive } from "../db/store.js";
 import { parseFeedbackOutput } from "../llm/parse.js";
 import { CUSTOMER_RUBRIC } from "../llm/rubric.js";
 import { loadScenariosFromDisk } from "../scenarios/load.js";
-import { exchanges, freshStore, goodFeedback } from "./helpers.js";
+import { exchanges, freshStore, goodFeedback, recordTurns } from "./helpers.js";
 
 const U1 = "11111111-1111-4111-8111-111111111111";
 const U2 = "22222222-2222-4222-8222-222222222222";
@@ -99,13 +99,13 @@ test("db: the scorecard and transcript are stored once and read back exactly", a
   const store = await freshStore();
   await store.touchProfile(U1, "ana@example.com");
   await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee" });
-  const transcript = exchanges(2);
-  assert.equal(await store.saveFeedback(C1, 185, 60, fb(), transcript), true);
-  assert.equal(await store.saveFeedback(C1, 185, 60, fb(), transcript), false);
+  await recordTurns(store, C1, U1, exchanges(2));
+  assert.equal(await store.saveFeedback(C1, 185, 60, fb()), true);
+  assert.equal(await store.saveFeedback(C1, 185, 60, fb()), false);
 
   const d = (await store.getCallDetail(U1, C1))!;
   assert.deepEqual(d.feedback, fb());
-  assert.deepEqual(d.transcript, transcript);
+  assert.deepEqual(d.transcript, exchanges(2).slice(0, 4), "the stored turns, in order");
   assert.equal(d.durationSec, 185);
   assert.equal(d.qaScore, 60);
   assert.equal(d.title, "Late fee question");
@@ -121,7 +121,7 @@ test("db: admin user list, search, Pro and usage", async () => {
   await store.touchProfile(U2, "beto@example.com");
   await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee" });
   await store.recordUsage(C1, 500, true);
-  await store.saveFeedback(C1, 60, 72, fb(), exchanges(1));
+  await store.saveFeedback(C1, 60, 72, fb());
 
   const all = await store.listUsers({ query: "", limit: 50, offset: 0 });
   assert.equal(all.total, 2);
@@ -159,9 +159,9 @@ test("db: existing calls become legacy calls; new columns are added once and saf
   await db.query(`insert into callready_v2.calls (id, user_id, scenario_id) values ($1, $2, 'service-late-fee')`, [C1, U1]);
   await store.migrate(); // the next start runs the same script again
   const c = (await store.getCall(C1))!;
-  assert.equal(c.serverTranscript, false, "a row from before the change keeps the browser transcript");
+  assert.equal(c.serverTranscript, false, "a row from before the change stays marked as such");
   assert.equal(c.callerEndedAt, null);
-  assert.equal(await store.createCall({ id: C2, userId: U1, scenarioId: "tech-wifi-down", serverTranscript: true }), true);
+  assert.equal(await store.createCall({ id: C2, userId: U1, scenarioId: "tech-wifi-down" }), true);
   assert.equal((await store.getCall(C2))!.serverTranscript, true);
   assert.equal(await store.createCall({ id: C2, userId: U2, scenarioId: "tech-wifi-down" }), false, "an existing id is never overwritten");
   assert.equal((await store.getCall(C2))!.userId, U1);
@@ -170,7 +170,7 @@ test("db: existing calls become legacy calls; new columns are added once and saf
 test("db: leases are fenced by their token; an expired holder can't write or release a newer lease", async () => {
   const store = await freshStore();
   await store.touchProfile(U1, "ana@example.com");
-  await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee", serverTranscript: true });
+  await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee" });
   const old = "00000000-0000-4000-8000-000000000001";
   const fresh = "00000000-0000-4000-8000-000000000002";
   const turn = (token: string, position: number) => ({
@@ -197,7 +197,7 @@ test("db: leases are fenced by their token; an expired holder can't write or rel
 test("db: a turn is stored completely or not at all", async () => {
   const store = await freshStore();
   await store.touchProfile(U1, "ana@example.com");
-  await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee", serverTranscript: true });
+  await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee" });
   const t1 = "00000000-0000-4000-8000-000000000001";
   assert.ok(await store.acquireLease(C1, U1, t1, 90));
   await store.commitTurn({ callId: C1, userId: U1, leaseToken: t1, position: 0, agentText: "a", callerText: "c", tokens: 10, ended: false });
@@ -215,13 +215,13 @@ test("db: a turn is stored completely or not at all", async () => {
 test("db: scoring with a lease only saves while the lease is held, and frees the call", async () => {
   const store = await freshStore();
   await store.touchProfile(U1, "ana@example.com");
-  await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee", serverTranscript: true });
+  await store.createCall({ id: C1, userId: U1, scenarioId: "service-late-fee" });
   const stale = "00000000-0000-4000-8000-000000000001";
   assert.ok(await store.acquireLease(C1, U1, stale, -1));
-  assert.equal(await store.saveFeedback(C1, 60, 60, fb(), null, stale), false, "an expired lease can't save");
+  assert.equal(await store.saveFeedback(C1, 60, 60, fb(), stale), false, "an expired lease can't save");
   const live = "00000000-0000-4000-8000-000000000002";
   assert.ok(await store.acquireLease(C1, U1, live, 90));
-  assert.equal(await store.saveFeedback(C1, 60, 60, fb(), null, live), true);
+  assert.equal(await store.saveFeedback(C1, 60, 60, fb(), live), true);
   assert.equal((await store.getCallDetail(U1, C1))!.qaScore, 60);
 });
 

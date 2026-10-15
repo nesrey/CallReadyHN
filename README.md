@@ -64,7 +64,6 @@ publishable key, which are public by design). The server refuses to start if a r
 | `RATE_TURN_MAX` / `RATE_TURN_WINDOW_SEC` | `40` / `600` | Turn requests per account per window |
 | `RATE_FEEDBACK_MAX` / `RATE_FEEDBACK_WINDOW_SEC` | `6` / `600` | Feedback requests per account per window |
 | `MIN_TURNS` / `MAX_TURNS` | `6` / `10` | Call length in customer turns |
-| `TRANSCRIPT_MODE` | `server` | **Leave unset.** `client` is an emergency fallback only (see section 5) |
 
 **Never point a local run at the production database.** Startup changes the schema. The server refuses to start
 when `DATABASE_URL` is the live Supabase project, unless it runs on Render (`server/src/dbGuard.ts`). Use a separate
@@ -174,12 +173,11 @@ the caller said, rewrite an earlier answer, or add a line after the caller hung 
   by a cleanup that runs at startup and at most hourly while requests come in (the free server has no scheduler and
   sleeps, so deletion can lag on quiet days). The call row (time, scenario, tokens) stays for the daily limit and
   usage.
-- Calls from before this change (`calls.server_transcript = false`) keep the old behaviour, logged as
-  `legacy_transcript`. Every call created now is `true`; nothing in a request can change that.
-- **`TRANSCRIPT_MODE=client` is an emergency fallback only.** New calls then trust the page's transcript again, so
-  scores can be forged. The server logs a warning at startup and for every call it creates in that mode. Use it only
-  to get calls working while a bug in the server transcript is fixed, then remove it. The setting and the legacy code
-  path are to be deleted two weeks after this ships (target: 2026-10-26).
+- Scoring uses only the server's record; the page doesn't send its copy (a `history` from an older page is ignored).
+- Every call created is `calls.server_transcript = true`; nothing in a request can change that. Calls from before
+  server transcripts (`false`) can't be continued or scored (all of them had expired anyway); scored ones stay
+  readable. There is no setting that brings back browser-supplied transcripts: if the server's recording breaks,
+  roll back by redeploying the previous commit.
 
 ## 6. Free vs Pro
 
@@ -268,7 +266,6 @@ calm non-interview calls) and `behaviorNotes`.
 ## Known pilot limitations
 
 - Rate limits are in memory and reset when the server restarts (per-call token totals are in the database).
-- `TRANSCRIPT_MODE` and the legacy (browser-transcript) code path are temporary; remove them by 2026-10-26.
 - Payments are manual; the landing page says "Contact us" for Pro and "2 calls a day" for Free (update it by hand if
   the free limit changes).
 - The caller voice is the browser's built-in speech; quality depends on the device.

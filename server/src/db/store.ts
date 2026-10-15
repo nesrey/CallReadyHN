@@ -38,7 +38,10 @@ export interface CallRow {
   turns: number;
   tokens: number;
   finishedAt: Date | null;
-  /** true: the server records the turns and scores its own copy. false: calls from before that (legacy). */
+  /**
+   * true for every call made since the server started recording turns. false: a call from before that, whose
+   * transcript came from the page; it can't be continued or scored now, but a scored one stays readable.
+   */
   serverTranscript: boolean;
   /** When the server ended the call (the caller said goodbye or the turn limit was reached). */
   callerEndedAt: Date | null;
@@ -151,8 +154,8 @@ export interface Store {
   setScenarioEnabled(id: string, enabled: boolean): Promise<boolean>;
 
   getCall(id: string): Promise<CallRow | null>;
-  /** Returns false when a call with this id already exists (nothing is changed then). */
-  createCall(c: { id: string; userId: string; scenarioId: string; serverTranscript?: boolean }): Promise<boolean>;
+  /** A new server-recorded call. Returns false when a call with this id already exists (nothing is changed then). */
+  createCall(c: { id: string; userId: string; scenarioId: string }): Promise<boolean>;
   /** Add the tokens a model request used; count a turn when the AI produced a line. */
   recordUsage(callId: string, tokens: number, turn: boolean): Promise<void>;
   /** Calls with at least one AI turn, started at or after `since`. */
@@ -173,12 +176,10 @@ export interface Store {
   purgeAbandonedTurns(before: Date): Promise<number>;
 
   /**
-   * Store the scorecard and close the call. `transcript` is written with it for legacy calls; null when the server
-   * already has the turns. With `leaseToken`, only the current lease holder can save. False if nothing was saved.
+   * Store the scorecard and close the call (its turns are already stored). With `leaseToken`, only the current lease
+   * holder can save. False if nothing was saved.
    */
-  saveFeedback(
-    callId: string, durationSec: number, qaScore: number, f: FeedbackOutput, transcript: Message[] | null, leaseToken?: string | null,
-  ): Promise<boolean>;
+  saveFeedback(callId: string, durationSec: number, qaScore: number, f: FeedbackOutput, leaseToken?: string | null): Promise<boolean>;
   getCallDetail(userId: string, callId: string): Promise<CallDetail | null>;
   listCalls(userId: string, limit: number): Promise<CallSummary[]>;
   skillAverages(userId: string): Promise<SkillAverage[]>;

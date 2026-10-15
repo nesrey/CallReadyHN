@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  assertTurnShape, customerTurnNumber, meaningfulAgentLines, normalizeHistory, resolveEnd,
+  assertTurnShape, meaningfulAgentLines, normalizeHistory, resolveEnd, sequenceOf,
 } from "../turnLogic.js";
 import { buildCustomerSystem, buildFeedbackSystem, buildFeedbackUser, buildTurnMessages, OPENER } from "../llm/prompts.js";
 import { loadScenariosFromDisk } from "../scenarios/load.js";
@@ -23,9 +23,9 @@ test("resolveEnd: never before min, always at max, model decides between", () =>
   assert.equal(resolveEnd(false, 10, 6, 10), true);
 });
 
-test("customerTurnNumber counts the reply being generated", () => {
-  assert.equal(customerTurnNumber(exchanges(0)), 1);
-  assert.equal(customerTurnNumber(exchanges(3)), 4);
+test("sequenceOf: which caller line the agent answers, and the agent's new line; nothing else is read", () => {
+  assert.deepEqual(sequenceOf(exchanges(0)), { seq: 0, agentText: exchanges(0)[0]!.text });
+  assert.deepEqual(sequenceOf(exchanges(3)), { seq: 3, agentText: "Agent answer number 3 thank you." });
 });
 
 test("assertTurnShape: the agent answers first and has the last word", () => {
@@ -124,6 +124,11 @@ test("parseSessionBody validates shape, roles and limits", () => {
     tryBody({ sessionId: "3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01", scenarioId: "a", history: exchanges(13) }),
     /at most 24/,
   );
+  // Scoring requests may leave the history out; when one is sent it is still checked.
+  const id = "3f2b8c1e-5a47-4d0e-9b1a-2c7e6f8d9a01";
+  assert.throws(tryBody({ sessionId: id, scenarioId: "a" }), /history must be an array/, "turns still need it");
+  assert.deepEqual(parseSessionBody({ sessionId: id, scenarioId: "a" }, limits, { historyRequired: false }).history, []);
+  assert.throws(() => parseSessionBody({ sessionId: id, scenarioId: "a", history: "x" }, limits, { historyRequired: false }), /array/);
 });
 
 test("isUuid accepts UUIDs only", () => {

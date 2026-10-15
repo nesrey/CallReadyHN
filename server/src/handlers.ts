@@ -10,10 +10,8 @@ import { qaScore, rubricFor, type Criterion } from "./llm/rubric.js";
 import type { ScenarioCatalog } from "./scenarios/catalog.js";
 import type { Scenario } from "./scenarios/load.js";
 import { startOfDay } from "./time.js";
-import {
-  assertTurnShape, countRole, customerTurnNumber, meaningfulAgentLines, normalizeHistory, resolveEnd, sequenceOf,
-} from "./turnLogic.js";
-import type { LlmClient, Message } from "./types.js";
+import { assertTurnShape, countRole, meaningfulAgentLines, normalizeHistory, resolveEnd, sequenceOf } from "./turnLogic.js";
+import type { LlmClient } from "./types.js";
 import { parseSessionBody } from "./validate.js";
 
 export interface Deps {
@@ -43,6 +41,8 @@ const notFound = () => new ApiError(404, "not_found", "Call not found.");
 const callOver = (msg = "This call already ended.") => new ApiError(400, "call_over", msg);
 const inProgress = () => new ApiError(409, "turn_in_progress", "The last reply is still being prepared. Try again in a moment.", 3);
 const outOfSync = () => new ApiError(409, "turn_conflict", "This call is out of sync with the server.");
+/** An unscored call from before the server recorded transcripts. They all expired within a day of that change. */
+const oldCall = () => callOver("This call can no longer be continued.");
 
 /** An unscored call older than the time limit can no longer be continued or scored. */
 const expired = (call: CallRow, now: Date) => call.finishedAt === null && now.getTime() - call.startedAt.getTime() >= CALL_TTL_MS;
@@ -65,10 +65,8 @@ async function openCall(deps: Deps, user: AuthUser, id: string, scenario: Scenar
   if (!call) {
     if (!firstTurn) throw notFound();
     await checkCanStart(deps, user, scenario);
-    const serverTranscript = config.transcriptMode === "server";
     // A second request with the same id may have created it first; then the checks below decide.
-    const created = await store.createCall({ id, userId: user.userId, scenarioId: scenario.id, serverTranscript });
-    if (created && !serverTranscript) console.warn(`TRANSCRIPT_MODE=client: call ${id} uses a browser-supplied transcript.`);
+    const created = await store.createCall({ id, userId: user.userId, scenarioId: scenario.id });
     call = await store.getCall(id);
     if (!call) throw notFound();
     if (created) return call;
@@ -77,6 +75,7 @@ async function openCall(deps: Deps, user: AuthUser, id: string, scenario: Scenar
   if (call.scenarioId !== scenario.id) throw new ApiError(400, "invalid_request", "Scenario does not match this call.");
   if (call.finishedAt) throw callOver();
   if (expired(call, nowOf(deps))) throw callOver("This call expired.");
+  if (!call.serverTranscript) throw oldCall();
   return call;
 }
 
@@ -106,7 +105,6 @@ export async function handleTurn(deps: Deps, user: AuthUser, body: unknown) {
   if (seq >= config.maxTurns) throw callOver("This call already reached its maximum length.");
   const call = await openCall(deps, user, sessionId, scenario, seq === 0);
   deps.janitor?.tick();
-  if (!call.serverTranscript) return legacyTurn(deps, call, scenario, history);
   return serverTurn(deps, user, call, scenario, seq, agentText);
 }
 
@@ -161,38 +159,6 @@ async function serverTurn(deps: Deps, user: AuthUser, call: CallRow, scenario: S
   }
 }
 
-/** Calls created before server-recorded transcripts (or in the emergency client mode): the page's history is used. */
-async function legacyTurn(deps: Deps, call: CallRow, scenario: Scenario, history: Message[]) {
-  const { config, store } = deps;
-  console.warn(`legacy_transcript call=${call.id} (turn)`);
-  if (call.tokens >= config.sessionTokenCap - config.feedbackReserve) throw capError();
-
-  const turn = customerTurnNumber(history);
-  let spent = 0;
-  let out;
-  try {
-    out = await callWithRetry({
-      llm: deps.llm,
-      system: buildCustomerSystem(scenario, turn, config.minTurns, config.maxTurns),
-      messages: buildTurnMessages(history),
-      maxTokens: 300,
-      parse: parseTurnOutput,
-      onUsage: (n) => { spent += n; },
-    });
-  } catch (e) {
-    if (spent > 0) await store.recordUsage(call.id, spent, false);
-    throw e;
-  }
-  await store.recordUsage(call.id, spent, true);
-
-  return {
-    line: out.line,
-    callEnded: resolveEnd(out.end, turn, config.minTurns, config.maxTurns),
-    turnNumber: turn,
-    usage: { sessionTokensUsed: call.tokens + spent, sessionTokenCap: config.sessionTokenCap },
-  };
-}
-
 /** The scorecard as the page shows it: rubric labels and weights next to each result, plus the 0-100 score. */
 export function presentFeedback(f: FeedbackOutput, rubric: readonly Criterion[]) {
   const scores = Object.fromEntries(f.criteria.map((c) => [c.key, c.score]));
@@ -210,8 +176,9 @@ export function presentFeedback(f: FeedbackOutput, rubric: readonly Criterion[])
 }
 
 export async function handleFeedback(deps: Deps, user: AuthUser, body: unknown) {
-  const { config, store } = deps;
-  const { sessionId, scenarioId, history: rawHistory } = parseSessionBody(body, config);
+  const { store } = deps;
+  // Whatever history the page sends is not used: the server scores its own record of the call.
+  const { sessionId, scenarioId } = parseSessionBody(body, deps.config, { historyRequired: false });
   const scenario = findScenario(deps, scenarioId);
   const rubric = rubricFor(scenario.callType);
 
@@ -222,7 +189,7 @@ export async function handleFeedback(deps: Deps, user: AuthUser, body: unknown) 
   // Asking again (e.g. after a dropped connection) returns what was already saved.
   if (call.finishedAt) return savedFeedback(deps, user, call, rubric);
   if (expired(call, nowOf(deps))) throw callOver("This call expired.");
-  if (!call.serverTranscript) return legacyFeedback(deps, call, scenario, rubric, normalizeHistory(rawHistory));
+  if (!call.serverTranscript) throw oldCall();
   return serverFeedback(deps, user, call, scenario, rubric);
 }
 
@@ -267,7 +234,7 @@ async function serverFeedback(deps: Deps, user: AuthUser, call: CallRow, scenari
     });
     const shown = presentFeedback(feedback, rubric);
     const durationSec = (nowOf(deps).getTime() - call.startedAt.getTime()) / 1000;
-    if (!(await store.saveFeedback(call.id, durationSec, shown.qaScore, feedback, null, token))) {
+    if (!(await store.saveFeedback(call.id, durationSec, shown.qaScore, feedback, token))) {
       // The lease ran out while grading; whoever holds the call now decides. Never return an unsaved scorecard.
       const again = await store.getCall(call.id);
       if (again?.finishedAt) return savedFeedback(deps, user, again, rubric);
@@ -281,35 +248,5 @@ async function serverFeedback(deps: Deps, user: AuthUser, call: CallRow, scenari
   } finally {
     if (held) await release(deps, call.id, user.userId, token, spent);
     else if (spent > 0) await store.recordUsage(call.id, spent, false);
-  }
-}
-
-/** Calls created before server-recorded transcripts (or in the emergency client mode): the page's history is scored. */
-async function legacyFeedback(deps: Deps, call: CallRow, scenario: Scenario, rubric: readonly Criterion[], history: Message[]) {
-  const { config, store } = deps;
-  console.warn(`legacy_transcript call=${call.id} (feedback)`);
-  const usage = (extra: number) => ({ sessionTokensUsed: call.tokens + extra, sessionTokenCap: config.sessionTokenCap });
-
-  if (meaningfulAgentLines(history) < MIN_AGENT_LINES) {
-    throw new ApiError(422, "not_enough_speech", "Not enough of the call happened to score it.");
-  }
-  if (call.tokens >= config.sessionTokenCap) throw capError();
-
-  let spent = 0;
-  try {
-    const feedback = await callWithRetry({
-      llm: deps.llm,
-      system: buildFeedbackSystem(scenario),
-      messages: [{ role: "user", content: buildFeedbackUser(history) }],
-      maxTokens: 2000,
-      parse: (text) => parseFeedbackOutput(text, rubric),
-      onUsage: (n) => { spent += n; },
-    });
-    const shown = presentFeedback(feedback, rubric);
-    const durationSec = (nowOf(deps).getTime() - call.startedAt.getTime()) / 1000;
-    await store.saveFeedback(call.id, durationSec, shown.qaScore, feedback, history);
-    return { callId: call.id, ...shown, transcript: history, usage: usage(spent) };
-  } finally {
-    if (spent > 0) await store.recordUsage(call.id, spent, false);
   }
 }
