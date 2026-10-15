@@ -136,6 +136,50 @@ alter table ${DB}.calls add column if not exists lease_token uuid;
 alter table ${DB}.calls add column if not exists lease_until timestamptz;
 create index if not exists calls_unfinished on ${DB}.calls (started_at) where finished_at is null;
 
+-- Shared AI budget: model requests and tokens per quota period ('d:YYYY-MM-DD' and 'm:YYYY-MM', in the quota time
+-- zone). reserve_ai_request counts one request only if every limit still allows it, holding both rows' locks, so
+-- requests arriving at the same moment can never go past a limit. A limit of 0 is off.
+create table if not exists ${DB}.ai_usage (
+  period text primary key,
+  requests integer not null default 0,
+  tokens bigint not null default 0,
+  updated_at timestamptz not null default now()
+);
+create or replace function ${DB}.reserve_ai_request(
+  p_day text, p_month text, p_day_requests integer, p_day_tokens bigint, p_month_requests integer
+) returns boolean language plpgsql as $fn$
+declare
+  d ${DB}.ai_usage;
+  m ${DB}.ai_usage;
+begin
+  insert into ${DB}.ai_usage (period) values (p_day), (p_month) on conflict (period) do nothing;
+  -- Always the day row first, then the month row: one lock order, no deadlocks.
+  select * into d from ${DB}.ai_usage where period = p_day for update;
+  select * into m from ${DB}.ai_usage where period = p_month for update;
+  if (p_day_requests > 0 and d.requests >= p_day_requests)
+     or (p_day_tokens > 0 and d.tokens >= p_day_tokens)
+     or (p_month_requests > 0 and m.requests >= p_month_requests) then
+    return false;
+  end if;
+  update ${DB}.ai_usage set requests = requests + 1, updated_at = now() where period = p_day;
+  update ${DB}.ai_usage set requests = requests + 1, updated_at = now() where period = p_month;
+  return true;
+end
+$fn$;
+revoke all on function ${DB}.reserve_ai_request(text, text, integer, bigint, integer) from public;
+-- Same lock order as reserve_ai_request (day, then month); one UPDATE of both rows could take them in either order
+-- and deadlock against it.
+create or replace function ${DB}.add_ai_tokens(p_day text, p_month text, p_tokens bigint)
+returns void language plpgsql as $fn$
+begin
+  insert into ${DB}.ai_usage (period) values (p_day), (p_month) on conflict (period) do nothing;
+  update ${DB}.ai_usage set tokens = tokens + p_tokens, updated_at = now() where period = p_day;
+  update ${DB}.ai_usage set tokens = tokens + p_tokens, updated_at = now() where period = p_month;
+end
+$fn$;
+revoke all on function ${DB}.add_ai_tokens(text, text, bigint) from public;
+
+alter table ${DB}.ai_usage enable row level security;
 alter table ${DB}.profiles enable row level security;
 alter table ${DB}.scenarios enable row level security;
 alter table ${DB}.calls enable row level security;

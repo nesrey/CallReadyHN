@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AuthUser } from "./auth.js";
 import type { Config } from "./config.js";
-import { proActive, type CallRow, type Store } from "./db/store.js";
+import { proActive, type AiLimits, type AiPeriods, type CallRow, type Store } from "./db/store.js";
 import { ApiError } from "./errors.js";
 import { CALL_TTL_MS, type TranscriptJanitor } from "./janitor.js";
 import { callWithRetry, parseFeedbackOutput, parseTurnOutput, type FeedbackOutput } from "./llm/parse.js";
@@ -9,7 +9,7 @@ import { buildCustomerSystem, buildFeedbackSystem, buildFeedbackUser, buildTurnM
 import { qaScore, rubricFor, type Criterion } from "./llm/rubric.js";
 import type { ScenarioCatalog } from "./scenarios/catalog.js";
 import type { Scenario } from "./scenarios/load.js";
-import { startOfDay } from "./time.js";
+import { dayKey, startOfDay } from "./time.js";
 import { assertTurnShape, countRole, meaningfulAgentLines, normalizeHistory, resolveEnd, sequenceOf } from "./turnLogic.js";
 import type { LlmClient } from "./types.js";
 import { parseSessionBody } from "./validate.js";
@@ -43,6 +43,41 @@ const inProgress = () => new ApiError(409, "turn_in_progress", "The last reply i
 const outOfSync = () => new ApiError(409, "turn_conflict", "This call is out of sync with the server.");
 /** An unscored call from before the server recorded transcripts. They all expired within a day of that change. */
 const oldCall = () => callOver("This call can no longer be continued.");
+
+/** The quota day and month `now` falls in, in the AI quota time zone. */
+export function aiPeriods(now: Date, timeZone: string): AiPeriods {
+  const day = dayKey(now, timeZone);
+  return { day: `d:${day}`, month: `m:${day.slice(0, 7)}` };
+}
+
+/** Request limits for one AI request: a new call must leave the reserve free for calls already running. */
+export function aiLimits(cap: Config["aiCap"], newCall: boolean): AiLimits {
+  const reserve = newCall ? cap.newCallReserve : 0;
+  const less = (n: number) => (n > 0 ? n - reserve : 0);
+  return { dayRequests: less(cap.dailyRequests), dayTokens: cap.dailyTokens, monthRequests: less(cap.monthlyRequests) };
+}
+
+const aiCapacity = () => new ApiError(503, "ai_capacity", "CallReady has reached today's practice limit. Please try again tomorrow.");
+
+/**
+ * The model, counted against the site-wide AI budget: every attempt (retries too) reserves one request first and
+ * is refused once a limit is reached; a request that fails still counts, as it does at the provider.
+ */
+function meteredLlm(deps: Deps, newCall: boolean): LlmClient {
+  return {
+    async complete(req) {
+      const periods = aiPeriods(nowOf(deps), deps.config.aiCap.timeZone);
+      if (!(await deps.store.reserveAiRequest(periods, aiLimits(deps.config.aiCap, newCall)))) throw aiCapacity();
+      const res = await deps.llm.complete(req);
+      try {
+        await deps.store.addAiTokens(periods, res.inputTokens + res.outputTokens);
+      } catch (e) {
+        console.error("Could not record AI tokens:", (e as Error).message);
+      }
+      return res;
+    },
+  };
+}
 
 /** An unscored call older than the time limit can no longer be continued or scored. */
 const expired = (call: CallRow, now: Date) => call.finishedAt === null && now.getTime() - call.startedAt.getTime() >= CALL_TTL_MS;
@@ -139,7 +174,7 @@ async function serverTurn(deps: Deps, user: AuthUser, call: CallRow, scenario: S
 
     const turn = seq + 1;
     const out = await callWithRetry({
-      llm: deps.llm,
+      llm: meteredLlm(deps, seq === 0), // the greeting's reply starts a new call
       system: buildCustomerSystem(scenario, turn, config.minTurns, config.maxTurns),
       messages: buildTurnMessages([...turns, { role: "agent", text: agentText }]),
       maxTokens: 300,
@@ -225,7 +260,7 @@ async function serverFeedback(deps: Deps, user: AuthUser, call: CallRow, scenari
     if (live.tokens >= config.sessionTokenCap) throw capError();
 
     const feedback = await callWithRetry({
-      llm: deps.llm,
+      llm: meteredLlm(deps, false),
       system: buildFeedbackSystem(scenario),
       messages: [{ role: "user", content: buildFeedbackUser(transcript) }],
       maxTokens: 2000,

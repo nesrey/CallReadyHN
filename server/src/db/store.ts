@@ -143,6 +143,24 @@ export interface AuthAccount {
   anonymous: boolean;
 }
 
+/** The quota periods one AI request counts toward. */
+export interface AiPeriods {
+  /** "d:YYYY-MM-DD" in the quota time zone. */
+  day: string;
+  /** "m:YYYY-MM" in the quota time zone. */
+  month: string;
+}
+/** Limits for one reservation; 0 = no limit. */
+export interface AiLimits {
+  dayRequests: number;
+  dayTokens: number;
+  monthRequests: number;
+}
+export interface AiUsage {
+  day: { requests: number; tokens: number };
+  month: { requests: number; tokens: number };
+}
+
 export function proActive(p: Pick<Profile, "isPro" | "proUntil">, now: Date): boolean {
   return p.isPro && (p.proUntil === null || p.proUntil.getTime() > now.getTime());
 }
@@ -196,6 +214,12 @@ export interface Store {
   getCallDetail(userId: string, callId: string): Promise<CallDetail | null>;
   listCalls(userId: string, limit: number): Promise<CallSummary[]>;
   skillAverages(userId: string): Promise<SkillAverage[]>;
+
+  /** Count one AI request in `p` if every limit still allows it (atomic). False = over a limit, nothing counted. */
+  reserveAiRequest(p: AiPeriods, limits: AiLimits): Promise<boolean>;
+  /** Add the tokens a finished AI request used. */
+  addAiTokens(p: AiPeriods, tokens: number): Promise<void>;
+  aiUsage(p: AiPeriods): Promise<AiUsage>;
 
   listUsers(opts: { query: string; limit: number; offset: number }): Promise<{ users: AdminUser[]; total: number }>;
   setPro(userId: string, isPro: boolean, proUntil: Date | null): Promise<boolean>;

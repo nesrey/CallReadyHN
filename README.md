@@ -58,6 +58,10 @@ publishable key, which are public by design). The server refuses to start if a r
 | `SUPABASE_JWT_SECRET` | | Only for older Supabase projects that still sign tokens with a shared secret |
 | `ADMIN_EMAILS` | (none) | Comma-separated emails that may open the admin page. Set it only in `.env` / Render, never in code |
 | `ADMIN_AUTH_MODE` | `report` | `enforce` also requires a confirmed, matching Supabase sign-in record (see section 7) |
+| `AI_DAILY_REQUEST_CAP` | `400` | AI requests the whole site may make per quota day (`0` = no cap). See "AI budget" |
+| `AI_NEW_CALL_RESERVE` | `50` | New calls stop this many requests before a request cap, so running calls can finish |
+| `AI_DAILY_TOKEN_CAP` / `AI_MONTHLY_REQUEST_CAP` | `0` / `0` | Optional extra caps (`0` = off) |
+| `AI_QUOTA_TIMEZONE` | `America/Los_Angeles` | When the AI day starts (Google resets the free quota at midnight Pacific) |
 | `TIMEZONE` | `America/Tegucigalpa` | Where "today" starts for the free daily limit and the usage view |
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | Use `HOST=0.0.0.0` on Render |
 | `ALLOWED_ORIGINS` | (empty) | Sites allowed to call the API from a browser, e.g. `https://callreadyhn.com` |
@@ -281,6 +285,21 @@ The production database is backed up daily (09:00 UTC) by the private repo `nesr
 Actions job dumps `callready_v2`, `callready` and Supabase's sign-in rows with the read-only `backup_reader` login,
 encrypts them with age, and keeps each run 90 days. Its README has the restore steps; the private key is with the
 owner. In the production database, `backup_reader` and the `backup_access` schema exist only for this.
+
+## AI budget
+
+The whole site shares one Gemini key, so the server keeps its own count of AI requests per day (and month) in
+`callready_v2.ai_usage` and stops before Google's free daily quota runs out. Every model attempt counts, retries and
+failed attempts included, as they do at Google. The count is reserved before each request in one locked database
+step (`reserve_ai_request`), so requests arriving together can't pass the cap. New calls are refused with
+`503 ai_capacity` ("CallReady has reached today's practice limit") once `AI_DAILY_REQUEST_CAP − AI_NEW_CALL_RESERVE`
+requests are used; calls already running can continue up to the cap. The free 2-calls-a-day limit is separate and
+unchanged. The admin Overview shows today's and this month's numbers.
+
+These are CallReady's estimates of its own use. Google's limits (requests per minute and per day, tokens per minute)
+and any billing are what actually count; check them in Google AI Studio → Usage & limits. The defaults fit the free
+tier of `gemini-3.5-flash-lite` (500 requests a day); change `AI_DAILY_REQUEST_CAP` if the model or tier changes.
+Google's 15-requests-per-minute limit is not handled by this cap: bursts above it get `llm_busy` from Google.
 
 ## Known pilot limitations
 

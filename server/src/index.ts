@@ -70,6 +70,12 @@ async function main() {
     console.log(`CallReady running at http://${config.host}:${config.port}`);
     console.log(`AI: ${config.provider} / ${config.model} | scenarios: ${catalog.list().length} (${added} new from the seed file)`);
     console.log(`Admins: ${config.adminEmails.length} (ADMIN_AUTH_MODE=${config.adminAuthMode}) | time zone: ${config.timeZone}`);
+    const c = config.aiCap;
+    console.log(
+      `AI budget per ${c.timeZone} day: ${c.dailyRequests || "no"} request cap` +
+        (c.dailyRequests ? ` (new calls stop at ${c.dailyRequests - c.newCallReserve})` : "") +
+        (c.dailyTokens ? `, ${c.dailyTokens} token cap` : "") + (c.monthlyRequests ? `, ${c.monthlyRequests} requests a month` : ""),
+    );
   });
 }
 

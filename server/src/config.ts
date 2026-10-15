@@ -34,6 +34,12 @@ export interface Config {
   adminAuthMode: AdminAuthMode;
   /** IANA time zone that decides where "today" starts for the free daily limit and usage charts. */
   timeZone: string;
+  /**
+   * Shared AI budget for the whole site, counted in model requests (each attempt, retries included) per quota day.
+   * 0 turns a limit off. New calls stop `newCallReserve` requests before the daily/monthly request limit, so calls
+   * already running can finish.
+   */
+  aiCap: { dailyRequests: number; dailyTokens: number; monthlyRequests: number; newCallReserve: number; timeZone: string };
   /** How long one request may hold a call while it runs a turn or the scoring. Longer than two model attempts. */
   leaseSeconds: number;
 }
@@ -70,12 +76,12 @@ function origins(env: Env): string[] {
   });
 }
 
-function timeZone(env: Env): string {
-  const tz = (env.TIMEZONE ?? "").trim() || "America/Tegucigalpa";
+function timeZone(env: Env, key = "TIMEZONE", def = "America/Tegucigalpa"): string {
+  const tz = (env[key] ?? "").trim() || def;
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
   } catch {
-    throw new Error(`TIMEZONE must be an IANA time zone like America/Tegucigalpa (got "${tz}")`);
+    throw new Error(`${key} must be an IANA time zone like ${def} (got "${tz}")`);
   }
   return tz;
 }
@@ -123,6 +129,19 @@ export function loadConfig(env: Env): Config {
     throw new Error(`ADMIN_AUTH_MODE must be one of ${ADMIN_AUTH_MODES.join(", ")} (got "${env.ADMIN_AUTH_MODE}")`);
   }
 
+  // Defaults fit Gemini's free tier for the default model (500 requests a day): 80% of it, new calls stop 50 earlier.
+  const aiCap = {
+    dailyRequests: int(env, "AI_DAILY_REQUEST_CAP", 400, 0),
+    dailyTokens: int(env, "AI_DAILY_TOKEN_CAP", 0, 0),
+    monthlyRequests: int(env, "AI_MONTHLY_REQUEST_CAP", 0, 0),
+    newCallReserve: int(env, "AI_NEW_CALL_RESERVE", 50, 0),
+    // Google resets the free daily quota at midnight Pacific time.
+    timeZone: timeZone(env, "AI_QUOTA_TIMEZONE", "America/Los_Angeles"),
+  };
+  for (const [key, limit] of [["AI_DAILY_REQUEST_CAP", aiCap.dailyRequests], ["AI_MONTHLY_REQUEST_CAP", aiCap.monthlyRequests]] as const) {
+    if (limit > 0 && aiCap.newCallReserve >= limit) throw new Error(`AI_NEW_CALL_RESERVE must be lower than ${key}`);
+  }
+
   const cap = int(env, "SESSION_TOKEN_CAP", 20000, 1000);
   const reserve = int(env, "FEEDBACK_TOKEN_RESERVE", 4000, 0);
   if (reserve >= cap) throw new Error("FEEDBACK_TOKEN_RESERVE must be lower than SESSION_TOKEN_CAP");
@@ -153,6 +172,7 @@ export function loadConfig(env: Env): Config {
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
     adminAuthMode,
+    aiCap,
     timeZone: timeZone(env),
     leaseSeconds: 90,
   };

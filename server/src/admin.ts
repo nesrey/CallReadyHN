@@ -1,6 +1,6 @@
 import type { StoredScenario } from "./db/store.js";
 import { ApiError } from "./errors.js";
-import { nowOf, type Deps } from "./handlers.js";
+import { aiPeriods, nowOf, type Deps } from "./handlers.js";
 import { ScenarioError, validateScenario } from "./scenarios/load.js";
 import { aggregateUsage, startOfDay, startOfRange } from "./time.js";
 import { isUuid } from "./validate.js";
@@ -64,8 +64,16 @@ export async function adminOverview(deps: Deps) {
   const byDay = aggregateUsage(rows14, now, tz, 14);
   const week7 = rows14.filter((r) => r.startedAt >= week);
   const scored = week7.filter((r) => r.qa !== null);
+  const cap = deps.config.aiCap;
+  const ai = await deps.store.aiUsage(aiPeriods(now, cap.timeZone));
   return {
     timeZone: tz,
+    /** The site-wide AI budget: CallReady's own count of model requests, not the provider's. */
+    ai: {
+      timeZone: cap.timeZone,
+      today: { ...ai.day, cap: cap.dailyRequests || null, newCallsStopAt: cap.dailyRequests ? cap.dailyRequests - cap.newCallReserve : null, tokenCap: cap.dailyTokens || null },
+      month: { ...ai.month, cap: cap.monthlyRequests || null },
+    },
     totals: {
       users: counts.users,
       newUsers7d: counts.newUsers,

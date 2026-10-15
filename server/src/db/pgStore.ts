@@ -3,7 +3,7 @@ import type { CallType, Scenario, Temperament, Tier } from "../scenarios/load.js
 import type { Message } from "../types.js";
 import { DB, SCHEMA_SQL } from "./schema.js";
 import type {
-  AdminUser, AuthAccount, CallDetail, CallRow, CallSummary, OverviewCounts, Profile, RecentCall, RecentUser, Role, ScenarioCount, Settings,
+  AdminUser, AiLimits, AiPeriods, AiUsage, AuthAccount, CallDetail, CallRow, CallSummary, OverviewCounts, Profile, RecentCall, RecentUser, Role, ScenarioCount, Settings,
   SkillAverage, Store, StoredScenario, TurnCommit, UsageRow,
 } from "./store.js";
 
@@ -124,6 +124,29 @@ export class PgStore implements Store {
   async getProfile(userId: string): Promise<Profile | null> {
     const { rows } = await this.db.query(`select * from ${DB}.profiles where user_id = $1`, [userId]);
     return rows[0] ? toProfile(rows[0]) : null;
+  }
+
+  async reserveAiRequest(p: AiPeriods, limits: AiLimits): Promise<boolean> {
+    const { rows } = await this.db.query<{ ok: unknown }>(
+      `select ${DB}.reserve_ai_request($1, $2, $3, $4, $5) as ok`,
+      [p.day, p.month, limits.dayRequests, limits.dayTokens, limits.monthRequests],
+    );
+    return rows[0]?.ok === true;
+  }
+
+  async addAiTokens(p: AiPeriods, tokens: number): Promise<void> {
+    const n = Math.max(0, Math.round(tokens));
+    if (n === 0) return;
+    await this.db.query(`select ${DB}.add_ai_tokens($1, $2, $3)`, [p.day, p.month, n]);
+  }
+
+  async aiUsage(p: AiPeriods): Promise<AiUsage> {
+    const { rows } = await this.db.query(`select period, requests, tokens from ${DB}.ai_usage where period in ($1, $2)`, [p.day, p.month]);
+    const of = (k: string) => {
+      const r = rows.find((x) => x.period === k);
+      return { requests: num(r?.requests), tokens: num(r?.tokens) };
+    };
+    return { day: of(p.day), month: of(p.month) };
   }
 
   async getAuthAccount(userId: string): Promise<AuthAccount | null> {

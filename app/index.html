@@ -485,6 +485,14 @@ details.review[open] summary h2::after{content:" ▾"}
 .block-head h2{margin:0}
 .block-head .btn.link{font-size:14px}
 .card.list{padding:6px 8px}
+.aib{display:grid;gap:16px}
+.aib-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.aib-top span{font-variant-numeric:tabular-nums;white-space:nowrap}
+.aib .meter{display:block;margin:7px 0 5px}
+.aib small{display:block}
+.aib .meter.near i{background:var(--maize)}
+.aib .meter.full i{background:var(--bad)}
+@media (min-width:720px){ .aib{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px} }
 .act{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:10px 8px;border-bottom:1px solid var(--line)}
 .act:last-child{border-bottom:0}
 .act .sc-ico{width:40px;height:40px;border-radius:12px;align-self:center}
@@ -785,6 +793,7 @@ const ERR = {
   session_token_cap: 'This call reached its usage limit.',
   llm_unavailable: 'The AI service is not available right now. Try again in a few seconds.',
   llm_busy: 'The AI usage limit was reached for now. Try again later.',
+  ai_capacity: 'CallReady has reached today\'s practice limit. Please try again tomorrow.',
   llm_bad_output: 'The AI sent a reply we could not read. Try again.',
   not_enough_speech: 'This call was too short to score. Handle at least a few exchanges with the caller.',
   network: 'Cannot reach the server. Check your internet connection.',
@@ -1655,6 +1664,21 @@ async function adminOverviewView(vid) {
   const users = o.newUsers.length
     ? o.newUsers.map((u) => '<div class="act"><span class="av" aria-hidden="true">' + esc(u.email.slice(0, 1).toUpperCase()) + '</span><span class="act-main"><b>' + esc(u.email) + '</b><span class="muted small">' + (u.role ? esc(ROLE_NAMES[u.role]) + ' · ' : '') + 'joined ' + esc(timeAgo(u.createdAt, new Date())) + '</span></span></div>').join('')
     : '<p class="muted">No users yet.</p>';
+  // The site-wide AI budget (CallReady's own count; Google AI Studio has the official one).
+  const ai = o.ai;
+  const aiRow = (label, used, cap, note) => {
+    const pct = cap ? Math.min(100, used / cap * 100) : 0;
+    const level = !cap ? '' : used >= cap ? ' full' : ai.today.newCallsStopAt !== null && cap === ai.today.cap && used >= ai.today.newCallsStopAt ? ' near' : '';
+    return '<div><div class="aib-top"><b>' + label + '</b><span>' + n(used) + (cap ? ' / ' + n(cap) : '') + '</span></div>' +
+      (cap ? '<span class="meter' + level + '" role="img" aria-label="' + esc(label) + ': ' + n(used) + ' of ' + n(cap) + '"><i style="width:' + pct + '%"></i></span>' : '') +
+      '<small class="muted">' + note + '</small></div>';
+  };
+  const aiCard = '<section class="block"><div class="block-head"><h2>AI budget</h2></div><div class="card aib">' +
+    aiRow('Requests today', ai.today.requests, ai.today.cap,
+      ai.today.cap ? 'New calls stop at ' + n(ai.today.newCallsStopAt) + '; calls already running can finish.' : 'No daily cap set.') +
+    aiRow('Tokens today', ai.today.tokens, ai.today.tokenCap, 'The day resets at midnight Pacific time, like Google\'s free quota.') +
+    aiRow('Requests this month', ai.month.requests, ai.month.cap, 'CallReady\'s own count. Google AI Studio shows the official numbers.') +
+    '</div></section>';
   const topMax = Math.max(1, ...o.topScenarios.map((s) => s.calls));
   const top = o.topScenarios.length
     ? o.topScenarios.map((s) => '<div class="score"><span>' + esc(s.title) + '</span><span class="meter" role="img" aria-label="' + esc(s.title) + ': ' + s.calls + ' calls"><i style="width:' + (s.calls / topMax * 100) + '%"></i></span><b>' + s.calls + '</b></div>').join('')
@@ -1669,7 +1693,7 @@ async function adminOverviewView(vid) {
     tile('phone', n(t.calls7d), 'Calls', 'last 7 days') +
     tile('trophy', t.avgQa7d === null ? '—' : t.avgQa7d, 'Average QA', 'last 7 days') +
     tile('chart', n(t.tokens7d), 'AI tokens', 'last 7 days') +
-    '</div>' +
+    '</div>' + aiCard +
     '<section class="block"><div class="block-head"><h2>Calls per day <span class="muted small" style="font-family:var(--body);font-weight:500">last ' + days.length + ' days</span></h2><a class="btn link" href="#/admin/usage">See the table</a></div><div class="chart">' + callsColumns(days) + '</div></section>' +
     '<div class="cols">' +
     '<section class="block"><div class="block-head"><h2>Recent calls</h2></div><div class="card list">' + recent + '</div></section>' +
