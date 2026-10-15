@@ -1400,12 +1400,13 @@ async function callView(id, vid) {
   async function generateFeedback(retried) {
     overlay('<div class="spinner" aria-hidden="true"></div><p>Scoring your call…</p>');
     try {
-      const fb = await api('/session/feedback', { sessionId: sessionId, scenarioId: sc.id, history: state.history });
+      // The server scores its own record of the call, so the page's copy isn't sent.
+      const fb = await api('/session/feedback', { sessionId: sessionId, scenarioId: sc.id });
       callCache[fb.callId] = {
         id: fb.callId, scenarioId: sc.id, title: sc.title, callType: sc.callType, temperament: sc.temperament,
         startedAt: new Date(state.startTs).toISOString(), durationSec: Math.round((Date.now() - state.startTs) / 1000),
         // Show exactly what was scored: the server's transcript, not this page's copy.
-        qaScore: fb.qaScore, feedback: fb, transcript: fb.transcript || state.history.slice(),
+        qaScore: fb.qaScore, feedback: fb, transcript: fb.transcript,
       };
       location.hash = '#/results/' + fb.callId;
     } catch (e) {
