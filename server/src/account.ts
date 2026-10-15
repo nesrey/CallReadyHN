@@ -97,5 +97,6 @@ export async function getMyCall(deps: Deps, user: AuthUser, id: string) {
   const c = await deps.store.getCallDetail(user.userId, id);
   if (!c) throw new ApiError(404, "not_found", "Call not found.");
   const { feedback, ...rest } = c;
-  return { ...rest, startedAt: c.startedAt.toISOString(), feedback: presentFeedback(feedback, rubricFor(c.callType)) };
+  // Shown exactly as it was scored: the stored score, and the rubric version it was scored with.
+  return { ...rest, startedAt: c.startedAt.toISOString(), feedback: presentFeedback(feedback, rubricFor(c.callType, c.rubricVersion), c.qaScore) };
 }

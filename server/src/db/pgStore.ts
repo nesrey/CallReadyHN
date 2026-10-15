@@ -1,4 +1,5 @@
 import type { FeedbackOutput } from "../llm/parse.js";
+import { RUBRIC_VERSION } from "../llm/rubric.js";
 import type { CallType, Scenario, Temperament, Tier } from "../scenarios/load.js";
 import type { Message } from "../types.js";
 import { DB, SCHEMA_SQL } from "./schema.js";
@@ -334,7 +335,7 @@ export class PgStore implements Store {
     const { rows } = await this.db.query<{ n: unknown }>(
       `with c as (
          update ${DB}.calls set finished_at = now(), duration_sec = $2, qa_score = $3, summary = $4,
-           lease_token = null, lease_until = null
+           rubric_version = ${RUBRIC_VERSION}, lease_token = null, lease_until = null
          where id = $1 and finished_at is null
            and ($19::uuid is null or (lease_token = $19::uuid and lease_until > now()))
          returning id
@@ -384,6 +385,7 @@ export class PgStore implements Store {
     ]);
     return {
       ...toSummary(r),
+      rubricVersion: num(r.rubric_version) || 1,
       feedback: {
         criteria: crit.map((c) => ({ key: String(c.key), score: num(c.score), evidence: String(c.evidence), tip: String(c.tip) })),
         strengths: str.map((s) => String(s.text)),

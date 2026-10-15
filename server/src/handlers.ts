@@ -194,11 +194,14 @@ async function serverTurn(deps: Deps, user: AuthUser, call: CallRow, scenario: S
   }
 }
 
-/** The scorecard as the page shows it: rubric labels and weights next to each result, plus the 0-100 score. */
-export function presentFeedback(f: FeedbackOutput, rubric: readonly Criterion[]) {
+/**
+ * The scorecard as the page shows it: rubric labels and weights next to each result, plus the 0-100 score. A saved
+ * call passes its stored score and its own rubric version: a past result is shown as it was scored, never recomputed.
+ */
+export function presentFeedback(f: FeedbackOutput, rubric: readonly Criterion[], storedScore?: number) {
   const scores = Object.fromEntries(f.criteria.map((c) => [c.key, c.score]));
   return {
-    qaScore: qaScore(scores, rubric),
+    qaScore: storedScore ?? qaScore(scores, rubric),
     criteria: f.criteria.map((c) => {
       const r = rubric.find((x) => x.key === c.key);
       return { ...c, label: r?.label ?? c.key, weight: r?.weight ?? 0 };
@@ -222,18 +225,19 @@ export async function handleFeedback(deps: Deps, user: AuthUser, body: unknown) 
   if (call.scenarioId !== scenario.id) throw new ApiError(400, "invalid_request", "Scenario does not match this call.");
 
   // Asking again (e.g. after a dropped connection) returns what was already saved.
-  if (call.finishedAt) return savedFeedback(deps, user, call, rubric);
+  if (call.finishedAt) return savedFeedback(deps, user, call);
   if (expired(call, nowOf(deps))) throw callOver("This call expired.");
   if (!call.serverTranscript) throw oldCall();
   return serverFeedback(deps, user, call, scenario, rubric);
 }
 
-async function savedFeedback(deps: Deps, user: AuthUser, call: CallRow, rubric: readonly Criterion[]) {
+/** The scorecard already saved for this call, exactly as it was scored. */
+async function savedFeedback(deps: Deps, user: AuthUser, call: CallRow) {
   const saved = await deps.store.getCallDetail(user.userId, call.id);
   if (!saved) throw notFound();
   return {
     callId: call.id,
-    ...presentFeedback(saved.feedback, rubric),
+    ...presentFeedback(saved.feedback, rubricFor(saved.callType, saved.rubricVersion), saved.qaScore),
     transcript: saved.transcript,
     usage: { sessionTokensUsed: call.tokens, sessionTokenCap: deps.config.sessionTokenCap },
   };
@@ -246,7 +250,7 @@ async function serverFeedback(deps: Deps, user: AuthUser, call: CallRow, scenari
   const live = await store.acquireLease(call.id, user.userId, token, config.leaseSeconds);
   if (!live) {
     const again = await store.getCall(call.id);
-    if (again?.finishedAt) return savedFeedback(deps, user, again, rubric);
+    if (again?.finishedAt) return savedFeedback(deps, user, again);
     throw inProgress();
   }
 
@@ -272,7 +276,7 @@ async function serverFeedback(deps: Deps, user: AuthUser, call: CallRow, scenari
     if (!(await store.saveFeedback(call.id, durationSec, shown.qaScore, feedback, token))) {
       // The lease ran out while grading; whoever holds the call now decides. Never return an unsaved scorecard.
       const again = await store.getCall(call.id);
-      if (again?.finishedAt) return savedFeedback(deps, user, again, rubric);
+      if (again?.finishedAt) return savedFeedback(deps, user, again);
       throw inProgress();
     }
     held = false;

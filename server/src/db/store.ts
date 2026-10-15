@@ -72,6 +72,8 @@ export interface CallSummary {
 }
 
 export interface CallDetail extends CallSummary {
+  /** The rubric version the stored score was computed with. */
+  rubricVersion: number;
   feedback: FeedbackOutput;
   transcript: Message[];
 }

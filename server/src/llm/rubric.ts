@@ -29,8 +29,21 @@ export const INTERVIEW_RUBRIC: readonly Criterion[] = [
   { key: "closing", label: "Questions & closing", weight: 15, description: "Asks at least one thoughtful question about the job, thanks the interviewer, confirms next steps." },
 ];
 
-export function rubricFor(callType: CallType): readonly Criterion[] {
-  return callType === "interview" ? INTERVIEW_RUBRIC : CUSTOMER_RUBRIC;
+/**
+ * Rubric versions. Every scored call stores the version it was scored with (calls.rubric_version), so its results page
+ * keeps showing the labels and weights behind its score. To change criteria or weights: add version N+1 below with
+ * the new arrays, set RUBRIC_VERSION to it, and never edit or delete an older version.
+ */
+export const RUBRIC_VERSION = 1;
+const RUBRICS: Readonly<Record<number, { customer: readonly Criterion[]; interview: readonly Criterion[] }>> = {
+  1: { customer: CUSTOMER_RUBRIC, interview: INTERVIEW_RUBRIC },
+};
+for (const v of Object.values(RUBRICS)) for (const list of [v.customer, v.interview]) { list.forEach((c) => Object.freeze(c)); Object.freeze(list); }
+
+/** The rubric of `version` (the current one by default). An unknown version falls back to the current one. */
+export function rubricFor(callType: CallType, version = RUBRIC_VERSION): readonly Criterion[] {
+  const set = RUBRICS[version] ?? RUBRICS[RUBRIC_VERSION]!;
+  return callType === "interview" ? set.interview : set.customer;
 }
 
 /** 0-100 from 0-10 criterion scores. Computed here, never by the model. */

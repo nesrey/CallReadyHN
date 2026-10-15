@@ -136,6 +136,10 @@ alter table ${DB}.calls add column if not exists lease_token uuid;
 alter table ${DB}.calls add column if not exists lease_until timestamptz;
 create index if not exists calls_unfinished on ${DB}.calls (started_at) where finished_at is null;
 
+-- Which rubric version a call was scored with. The rubric never changed before this column existed, so every call
+-- already in the table was scored with version 1; new scorecards store the version in force when they are saved.
+alter table ${DB}.calls add column if not exists rubric_version smallint not null default 1;
+
 -- Shared AI budget: model requests and tokens per quota period ('d:YYYY-MM-DD' and 'm:YYYY-MM', in the quota time
 -- zone). reserve_ai_request counts one request only if every limit still allows it, holding both rows' locks, so
 -- requests arriving at the same moment can never go past a limit. A limit of 0 is off.
