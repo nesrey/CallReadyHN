@@ -72,8 +72,9 @@ export function createApp(deps: AppDeps, opts: { siteDir: string }) {
   };
 
   const requireAdmin = (_req: Request, res: Response, next: NextFunction) => {
-    if (!isAdmin(deps, userOf(res))) return next(new ApiError(403, "forbidden", "Admins only."));
-    next();
+    isAdmin(deps, userOf(res))
+      .then((ok) => next(ok ? undefined : new ApiError(403, "forbidden", "Admins only.")))
+      .catch(next);
   };
 
   const limit = (limiter: RateLimiter) => (_req: Request, res: Response, next: NextFunction) => {
@@ -112,7 +113,7 @@ export function createApp(deps: AppDeps, opts: { siteDir: string }) {
     json((req, res) => handleFeedback(deps, userOf(res), req.body)),
   );
 
-  const admin = [requireUser, requireAdmin];
+  const admin = [requireUser, limit(generalLimiter), requireAdmin];
   app.get("/admin/users", ...admin, json((req) => adminListUsers(deps, req.query as Record<string, unknown>)));
   app.post("/admin/users/:id/pro", ...admin, json((req) => adminSetPro(deps, String(req.params.id), req.body)));
   app.get("/admin/overview", ...admin, json(() => adminOverview(deps)));

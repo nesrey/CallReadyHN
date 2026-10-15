@@ -3,7 +3,7 @@ import type { CallType, Scenario, Temperament, Tier } from "../scenarios/load.js
 import type { Message } from "../types.js";
 import { DB, SCHEMA_SQL } from "./schema.js";
 import type {
-  AdminUser, CallDetail, CallRow, CallSummary, OverviewCounts, Profile, RecentCall, RecentUser, Role, ScenarioCount, Settings,
+  AdminUser, AuthAccount, CallDetail, CallRow, CallSummary, OverviewCounts, Profile, RecentCall, RecentUser, Role, ScenarioCount, Settings,
   SkillAverage, Store, StoredScenario, TurnCommit, UsageRow,
 } from "./store.js";
 
@@ -124,6 +124,23 @@ export class PgStore implements Store {
   async getProfile(userId: string): Promise<Profile | null> {
     const { rows } = await this.db.query(`select * from ${DB}.profiles where user_id = $1`, [userId]);
     return rows[0] ? toProfile(rows[0]) : null;
+  }
+
+  async getAuthAccount(userId: string): Promise<AuthAccount | null> {
+    // Supabase's own table; this server only ever reads it.
+    const { rows } = await this.db.query(
+      `select lower(email) as email, email_confirmed_at is not null as confirmed,
+         coalesce(banned_until > now(), false) as banned, deleted_at is not null as deleted,
+         coalesce(is_anonymous, false) as anonymous
+       from auth.users where id = $1`,
+      [userId],
+    );
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      email: r.email === null || r.email === undefined ? null : String(r.email),
+      emailConfirmed: r.confirmed === true, banned: r.banned === true, deleted: r.deleted === true, anonymous: r.anonymous === true,
+    };
   }
 
   async updateProfile(userId: string, role: Role, interests: CallType[]): Promise<void> {

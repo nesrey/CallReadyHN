@@ -3,6 +3,9 @@ export interface RateConfig {
   max: number;
 }
 
+export const ADMIN_AUTH_MODES = ["report", "enforce"] as const;
+export type AdminAuthMode = (typeof ADMIN_AUTH_MODES)[number];
+
 export const PROVIDERS = ["anthropic", "gemini"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
@@ -24,6 +27,11 @@ export interface Config {
   allowedOrigins: string[];
   /** Lower-cased emails that may open the admin page. */
   adminEmails: string[];
+  /**
+   * How an admin's sign-in record (Supabase auth.users) is checked on top of the token's email:
+   * "report" (default) logs any problem but still lets them in; "enforce" refuses them.
+   */
+  adminAuthMode: AdminAuthMode;
   /** IANA time zone that decides where "today" starts for the free daily limit and usage charts. */
   timeZone: string;
   /** How long one request may hold a call while it runs a turn or the scoring. Longer than two model attempts. */
@@ -110,6 +118,11 @@ export function loadConfig(env: Env): Config {
   const maxTurns = int(env, "MAX_TURNS", 10);
   if (minTurns > maxTurns) throw new Error("MIN_TURNS cannot be greater than MAX_TURNS");
 
+  const adminAuthMode = ((env.ADMIN_AUTH_MODE ?? "").trim().toLowerCase() || "report") as AdminAuthMode;
+  if (!(ADMIN_AUTH_MODES as readonly string[]).includes(adminAuthMode)) {
+    throw new Error(`ADMIN_AUTH_MODE must be one of ${ADMIN_AUTH_MODES.join(", ")} (got "${env.ADMIN_AUTH_MODE}")`);
+  }
+
   const cap = int(env, "SESSION_TOKEN_CAP", 20000, 1000);
   const reserve = int(env, "FEEDBACK_TOKEN_RESERVE", 4000, 0);
   if (reserve >= cap) throw new Error("FEEDBACK_TOKEN_RESERVE must be lower than SESSION_TOKEN_CAP");
@@ -139,6 +152,7 @@ export function loadConfig(env: Env): Config {
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
+    adminAuthMode,
     timeZone: timeZone(env),
     leaseSeconds: 90,
   };

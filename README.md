@@ -57,6 +57,7 @@ publishable key, which are public by design). The server refuses to start if a r
 | `DATABASE_SSL_CA` | | Supabase's root certificate (PEM text). When set, the database certificate is verified |
 | `SUPABASE_JWT_SECRET` | | Only for older Supabase projects that still sign tokens with a shared secret |
 | `ADMIN_EMAILS` | (none) | Comma-separated emails that may open the admin page. Set it only in `.env` / Render, never in code |
+| `ADMIN_AUTH_MODE` | `report` | `enforce` also requires a confirmed, matching Supabase sign-in record (see section 7) |
 | `TIMEZONE` | `America/Tegucigalpa` | Where "today" starts for the free daily limit and the usage view |
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | Use `HOST=0.0.0.0` on Render |
 | `ALLOWED_ORIGINS` | (empty) | Sites allowed to call the API from a browser, e.g. `https://callreadyhn.com` |
@@ -199,6 +200,17 @@ the caller said, rewrite an earlier answer, or add a line after the caller hung 
 - **Scenarios:** add, edit, turn on/off, including the agent desk (one `Label: Value` per line) and the policies. Every
   save runs the same validation as the seed file. IDs cannot change.
 - **Settings:** free calls per day and the *How to get Pro* text.
+
+**Who is an admin.** The sign-in token's email must be in `ADMIN_EMAILS`, and Supabase's own record of that user
+(`auth.users`, read-only) must agree: email confirmed, the same current email, not banned, deleted or anonymous.
+Anything the user can edit (`user_metadata`) is never used. `ADMIN_AUTH_MODE` decides what a disagreement does:
+`report` (default) lets the admin in and logs `admin_auth would refuse: user <id>: <reason>`; `enforce` refuses with
+`403` and logs `admin_auth refused: ...`. If the record can't be read, `enforce` refuses too. Admin requests share the
+account rate limit (240 per 10 minutes).
+
+**Locked out of the admin page?** On Render, set `ADMIN_AUTH_MODE=report` (or remove it) and let the service
+restart; that restores the email-only check without a code change. Then look for `admin_auth` lines in the logs to
+see why, and fix the account in Supabase (e.g. confirm the email) before switching back to `enforce`.
 
 ## 8. Voice: what works where
 

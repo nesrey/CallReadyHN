@@ -69,7 +69,7 @@ async function main() {
   app.listen(config.port, config.host, () => {
     console.log(`CallReady running at http://${config.host}:${config.port}`);
     console.log(`AI: ${config.provider} / ${config.model} | scenarios: ${catalog.list().length} (${added} new from the seed file)`);
-    console.log(`Admins: ${config.adminEmails.join(", ") || "(none)"} | time zone: ${config.timeZone}`);
+    console.log(`Admins: ${config.adminEmails.length} (ADMIN_AUTH_MODE=${config.adminAuthMode}) | time zone: ${config.timeZone}`);
   });
 }
 

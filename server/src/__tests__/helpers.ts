@@ -87,10 +87,34 @@ export async function recordTurns(store: PgStore, callId: string, userId: string
   }
 }
 
-/** A fresh in-memory Postgres (PGlite) with the schema and the seed scenarios. */
+const databases = new WeakMap<PgStore, PGlite>();
+
+/**
+ * A fresh in-memory Postgres (PGlite) with the schema and the seed scenarios, plus a stand-in for Supabase's
+ * auth.users (only the columns the server reads). The real one belongs to Supabase; migrate() never creates it.
+ */
 export async function freshStore(): Promise<PgStore> {
-  const store = new PgStore(new PGlite());
+  const db = new PGlite();
+  await db.exec(`create schema auth; create table auth.users (id uuid primary key, email text, email_confirmed_at timestamptz,
+    banned_until timestamptz, deleted_at timestamptz, is_anonymous boolean not null default false)`);
+  const store = new PgStore(db);
+  databases.set(store, db);
   await store.migrate();
   await store.seedScenarios(loadScenariosFromDisk());
   return store;
+}
+
+/** A Supabase sign-in record in a freshStore() database. Defaults: confirmed, not banned, deleted or anonymous. */
+export async function addAuthUser(
+  store: PgStore,
+  u: { id: string; email: string | null; confirmed?: boolean; bannedUntil?: Date | null; deleted?: boolean; anonymous?: boolean },
+): Promise<void> {
+  const db = databases.get(store);
+  if (!db) throw new Error("addAuthUser: not a freshStore() database");
+  await db.query(
+    `insert into auth.users (id, email, email_confirmed_at, banned_until, deleted_at, is_anonymous) values ($1, $2, $3, $4, $5, $6)
+     on conflict (id) do update set email = excluded.email, email_confirmed_at = excluded.email_confirmed_at,
+       banned_until = excluded.banned_until, deleted_at = excluded.deleted_at, is_anonymous = excluded.is_anonymous`,
+    [u.id, u.email, u.confirmed === false ? null : new Date(), u.bannedUntil ?? null, u.deleted ? new Date() : null, u.anonymous === true],
+  );
 }

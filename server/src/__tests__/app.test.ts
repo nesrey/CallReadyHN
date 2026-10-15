@@ -7,7 +7,7 @@ import { userFromClaims, type Auth, type AuthUser } from "../auth.js";
 import { loadConfig } from "../config.js";
 import { ApiError } from "../errors.js";
 import { ScenarioCatalog } from "../scenarios/catalog.js";
-import { MockLlm, exchanges, freshStore, goodFeedback } from "./helpers.js";
+import { MockLlm, addAuthUser, exchanges, freshStore, goodFeedback } from "./helpers.js";
 
 const PAGES = "https://callreadyhn.com";
 const config = loadConfig({ ANTHROPIC_API_KEY: "test", ALLOWED_ORIGINS: PAGES, ADMIN_EMAILS: "Boss@Example.com" });
@@ -24,6 +24,7 @@ const fakeAuth: Auth = {
 };
 
 const store = await freshStore();
+await addAuthUser(store, { id: USERS["boss-token"]!.userId, email: "boss@example.com" }); // the admin's confirmed sign-in record
 const catalog = new ScenarioCatalog(store);
 await catalog.refresh();
 const llm = new MockLlm([]);

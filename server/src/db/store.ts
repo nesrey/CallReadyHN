@@ -132,6 +132,17 @@ export interface ScenarioCount {
   calls: number;
 }
 
+/** A user's Supabase sign-in record (auth.users), as far as the admin check needs it. */
+export interface AuthAccount {
+  /** Lower-cased current email, or null. */
+  email: string | null;
+  emailConfirmed: boolean;
+  /** Banned right now (banned_until in the future). */
+  banned: boolean;
+  deleted: boolean;
+  anonymous: boolean;
+}
+
 export function proActive(p: Pick<Profile, "isPro" | "proUntil">, now: Date): boolean {
   return p.isPro && (p.proUntil === null || p.proUntil.getTime() > now.getTime());
 }
@@ -142,6 +153,8 @@ export interface Store {
   /** Create the profile on first sign-in; refresh email and last-seen (at most every few minutes). */
   touchProfile(userId: string, email: string): Promise<void>;
   getProfile(userId: string): Promise<Profile | null>;
+  /** The sign-in record Supabase keeps for this user (read-only), or null if there is none. */
+  getAuthAccount(userId: string): Promise<AuthAccount | null>;
   updateProfile(userId: string, role: Role, interests: CallType[]): Promise<void>;
 
   getSettings(): Promise<Settings>;

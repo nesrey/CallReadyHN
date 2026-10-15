@@ -1,5 +1,5 @@
 import type { AuthUser } from "./auth.js";
-import { proActive, ROLES, type Role } from "./db/store.js";
+import { proActive, ROLES, type AuthAccount, type Role } from "./db/store.js";
 import { ApiError } from "./errors.js";
 import { nowOf, presentFeedback, type Deps } from "./handlers.js";
 import { CUSTOMER_RUBRIC, rubricFor } from "./llm/rubric.js";
@@ -9,17 +9,48 @@ import { isUuid } from "./validate.js";
 
 const bad = (msg: string) => new ApiError(400, "invalid_request", msg);
 
-export function isAdmin(deps: Deps, user: AuthUser): boolean {
-  return deps.config.adminEmails.includes(user.email);
+/**
+ * Why a user whose token email is in ADMIN_EMAILS should still not be trusted as an admin, or null if nothing is
+ * wrong. Only Supabase's own record counts here, never anything the user can edit (like user_metadata).
+ */
+export function adminProblem(account: AuthAccount | null, tokenEmail: string, adminEmails: readonly string[]): string | null {
+  if (!account) return "no sign-in record";
+  if (account.deleted) return "account deleted";
+  if (account.anonymous) return "anonymous account";
+  if (account.banned) return "account banned";
+  if (!account.emailConfirmed) return "email not confirmed";
+  if (!account.email || !adminEmails.includes(account.email)) return "sign-in email is not an admin email";
+  if (account.email !== tokenEmail) return "token email differs from the account's current email";
+  return null;
+}
+
+/**
+ * Admin = the token's email is in ADMIN_EMAILS and Supabase's record of that user agrees (confirmed, current, not
+ * banned or deleted). ADMIN_AUTH_MODE=report only logs a disagreement; enforce refuses. Ordinary users never reach
+ * the database lookup.
+ */
+export async function isAdmin(deps: Deps, user: AuthUser): Promise<boolean> {
+  const { adminEmails, adminAuthMode } = deps.config;
+  if (!adminEmails.includes(user.email)) return false;
+  let problem: string | null;
+  try {
+    problem = adminProblem(await deps.store.getAuthAccount(user.userId), user.email, adminEmails);
+  } catch (e) {
+    problem = `sign-in record could not be read (${(e as Error).message})`;
+  }
+  if (!problem) return true;
+  console.warn(`admin_auth ${adminAuthMode === "enforce" ? "refused" : "would refuse"}: user ${user.userId}: ${problem}`);
+  return adminAuthMode === "report";
 }
 
 /** Everything the page needs about the signed-in learner. */
 export async function getMe(deps: Deps, user: AuthUser) {
   const now = nowOf(deps);
-  const [profile, settings, callsToday] = await Promise.all([
+  const [profile, settings, callsToday, admin] = await Promise.all([
     deps.store.getProfile(user.userId),
     deps.store.getSettings(),
     deps.store.countCallsSince(user.userId, startOfDay(now, deps.config.timeZone)),
+    isAdmin(deps, user),
   ]);
   if (!profile) throw new ApiError(401, "unauthorized", "Sign in again.");
   const pro = proActive(profile, now);
@@ -29,7 +60,7 @@ export async function getMe(deps: Deps, user: AuthUser) {
     interests: profile.interests,
     isPro: pro,
     proUntil: pro && profile.proUntil ? profile.proUntil.toISOString() : null,
-    isAdmin: isAdmin(deps, user),
+    isAdmin: admin,
     callsToday,
     freeDailyLimit: settings.freeDailyLimit,
     proInstructions: settings.proInstructions,
