@@ -275,6 +275,13 @@ demanding, furious) plus the interview. Fields: `id`, `title`, `summary`, `callT
 `hiddenFacts` (what only the caller knows, including verification details); optional `tier` (defaults to `free` for
 calm non-interview calls) and `behaviorNotes`.
 
+## Backups
+
+The production database is backed up daily (09:00 UTC) by the private repo `nesrey/callready-backups`: a GitHub
+Actions job dumps `callready_v2`, `callready` and Supabase's sign-in rows with the read-only `backup_reader` login,
+encrypts them with age, and keeps each run 90 days. Its README has the restore steps; the private key is with the
+owner. In the production database, `backup_reader` and the `backup_access` schema exist only for this.
+
 ## Known pilot limitations
 
 - Rate limits are in memory and reset when the server restarts (per-call token totals are in the database).
